@@ -354,10 +354,6 @@ class PokerGame:
     def process_action(self, player: Player, action: PlayerAction, bet_amount: Optional[int] = None):
         """
         Process a player's action during their turn.
-        Args:
-            player (Player): The acting player
-            action (PlayerAction): The chosen action (fold, check, call, raise)
-            bet_amount (Optional[int]): Amount to bet/raise if applicable
         """
         # Don't process actions during showdown
         if self.current_phase == GamePhase.SHOWDOWN:
@@ -383,13 +379,14 @@ class PokerGame:
             player.current_bet = self.current_bet
             self.pot += call_amount
         elif action == PlayerAction.RAISE and bet_amount is not None:
-            min_raise = max(self.current_bet * 2, self.big_blind * 2)
-            player.current_bet = max(player.current_bet, min_raise)
-            raise_amount = bet_amount - player.current_bet
-            player.stack -= raise_amount
+            # Calculate the total amount player needs to put in
+            total_to_put_in = bet_amount - player.current_bet
+            # Deduct from player's stack
+            player.stack -= total_to_put_in
+            # Update player's current bet and pot
             player.current_bet = bet_amount
             self.current_bet = bet_amount
-            self.pot += raise_amount
+            self.pot += total_to_put_in
             self.last_raiser = player
             # Reset has_acted for other players when there's a raise
             for p in self.players:
