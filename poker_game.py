@@ -383,6 +383,8 @@ class PokerGame:
             player.current_bet = self.current_bet
             self.pot += call_amount
         elif action == PlayerAction.RAISE and bet_amount is not None:
+            min_raise = max(self.current_bet * 2, self.big_blind * 2)
+            player.current_bet = max(player.current_bet, min_raise)
             raise_amount = bet_amount - player.current_bet
             player.stack -= raise_amount
             player.current_bet = bet_amount
@@ -535,9 +537,9 @@ class PokerGame:
                 pygame.draw.circle(glow_surface, (0, 255, 255, alpha), (radius, radius), radius)  # Cyan glow
                 self.screen.blit(glow_surface, (player.x + 25 - radius, player.y + 35 - radius))
         
-        # Draw player info
+        # Draw player info with 2 decimal places
         name_color = (0, 255, 255) if player.position == self.current_player_idx else (255, 255, 255)
-        name_text = self.font.render(f"{player.name} (${player.stack})", True, name_color)
+        name_text = self.font.render(f"{player.name} (${player.stack:.2f})", True, name_color)
         self.screen.blit(name_text, (player.x - 50, player.y - 40))
         
         # Draw player cards
@@ -550,9 +552,9 @@ class PokerGame:
                 for i in range(2):
                     pygame.draw.rect(self.screen, (200, 0, 0), (player.x + i * 60, player.y, 50, 70))
         
-        # Draw current bet
+        # Draw current bet with 2 decimal places
         if player.current_bet > 0:
-            bet_text = self.font.render(f"Bet: ${player.current_bet}", True, (255, 255, 0))
+            bet_text = self.font.render(f"Bet: ${player.current_bet:.2f}", True, (255, 255, 0))
             self.screen.blit(bet_text, (player.x - 30, player.y + 80))
     
     def _draw(self):
@@ -571,8 +573,8 @@ class PokerGame:
         for i, card in enumerate(self.community_cards):
             self._draw_card(card, 400 + i * 60, 350)
         
-        # Draw pot
-        pot_text = self.font.render(f"Pot: ${self.pot}", True, (255, 255, 255))
+        # Draw pot with 2 decimal places
+        pot_text = self.font.render(f"Pot: ${self.pot:.2f}", True, (255, 255, 255))
         self.screen.blit(pot_text, (550, 300))
         
         # Draw players
@@ -600,10 +602,19 @@ class PokerGame:
         for button in self.action_buttons.values():
             button.draw(self.screen, self.font)
         
-        # Draw bet slider
+        # Draw bet slider with min and max values
+        current_player = self.players[self.current_player_idx]
+        min_raise = max(self.current_bet * 2, self.big_blind * 2)
+        max_raise = current_player.stack + current_player.current_bet
+        
         pygame.draw.rect(self.screen, (200, 200, 200), self.bet_slider)
-        bet_text = self.font.render(f"Bet: ${self.current_bet_amount}", True, (255, 255, 255))
-        self.screen.blit(bet_text, (50, self.SCREEN_HEIGHT -75))
+        bet_text = self.font.render(f"Bet: ${int(self.current_bet_amount)}", True, (255, 255, 255))
+        min_text = self.font.render(f"Min: ${min_raise}", True, (255, 255, 255))
+        max_text = self.font.render(f"Max: ${max_raise}", True, (255, 255, 255))
+        
+        self.screen.blit(bet_text, (50, self.SCREEN_HEIGHT - 75))
+        self.screen.blit(min_text, (self.bet_slider.x, self.SCREEN_HEIGHT - 125))
+        self.screen.blit(max_text, (self.bet_slider.x, self.SCREEN_HEIGHT - 150))
         
         # Draw action history in top right corner
         history_x = self.SCREEN_WIDTH - 200
@@ -665,12 +676,27 @@ class PokerGame:
             for action, button in self.action_buttons.items():
                 if button.rect.collidepoint(mouse_pos) and button.enabled:
                     bet_amount = self.current_bet_amount if action == PlayerAction.RAISE else None
+                    # Validate bet amount doesn't exceed player's stack
+                    if action == PlayerAction.RAISE:
+                        max_bet = current_player.stack + current_player.current_bet
+                        min_bet = max(self.current_bet * 2, self.big_blind * 2)
+                        bet_amount = min(bet_amount, max_bet)
+                        bet_amount = max(bet_amount, min_bet)
                     self.process_action(current_player, action, bet_amount)
             
             # Check bet slider
             if self.bet_slider.collidepoint(mouse_pos):
-                self.current_bet_amount = max((mouse_pos[0] - self.bet_slider.x) * 2, self.current_bet * 2)
-    
+                # Calculate minimum raise (2x current bet)
+                min_raise = max(self.current_bet * 2, self.big_blind * 2)
+                # Calculate maximum raise (player's stack + current bet)
+                max_raise = current_player.stack + current_player.current_bet
+                
+                # Calculate bet amount based on slider position
+                slider_value = (mouse_pos[0] - self.bet_slider.x) / self.bet_slider.width
+                bet_range = max_raise - min_raise
+                self.current_bet_amount = min(min_raise + (bet_range * slider_value), max_raise)
+                self.current_bet_amount = max(self.current_bet_amount, min_raise)
+
     def _next_player(self):
         """
         Move to the next active player in the game.
@@ -700,9 +726,9 @@ class PokerGame:
         elif current_player.stack < (self.current_bet - current_player.current_bet):
             self.action_buttons[PlayerAction.CALL].enabled = False
         
-        # Disable raise if not enough chips
-        min_raise = self.current_bet * 2
-        if current_player.stack < min_raise:
+        # Disable raise if not enough chips for minimum raise
+        min_raise = max(self.current_bet * 2, self.big_blind * 2)
+        if current_player.stack + current_player.current_bet < min_raise:
             self.action_buttons[PlayerAction.RAISE].enabled = False
 
     def run(self):
