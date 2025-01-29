@@ -1,0 +1,33 @@
+# Environnement virtuel
+poker_env/
+venv/
+ENV/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# IDEs et éditeurs
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Fichiers de logs
+*.log
+
+# Fichiers de test
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Fichiers Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Fichiers d'environnement
+.env
+.env.local 
