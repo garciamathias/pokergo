@@ -1,2 +1,2 @@
-numpy==1.24.3
-pandas==2.0.2 
+# Aucune dépendance externe requise 
+pygame==2.5.2 
