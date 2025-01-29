@@ -1,6 +1,3 @@
-"""
-A 6-player poker game implementation with GUI using Pygame.
-"""
 import pygame
 import random
 from enum import Enum
@@ -27,6 +24,11 @@ class Card:
         Convert card to string representation.
         Returns:
             str: String representation of the card (e.g., "A♠")
+
+        Example:
+        >>> card = Card('♠', 14)
+        >>> print(card)
+        'A♠'
         """
         values = {11: 'J', 12: 'Q', 13: 'K', 14: 'A'}
         value_str = values.get(self.value, str(self.value))
@@ -95,11 +97,15 @@ class Button:
             font: Pygame font object for text rendering
         """
         if not self.enabled:
-            color = (128, 128, 128)  # Gray out disabled buttons
+            # Gray out disabled buttons
+            color = (128, 128, 128)
+            text_color = (200, 200, 200)
         else:
             color = (min(self.color[0] + 30, 255), min(self.color[1] + 30, 255), min(self.color[2] + 30, 255)) if self.is_hovered else self.color
+            text_color = (255, 255, 255)
+        
         pygame.draw.rect(screen, color, self.rect)
-        text_surface = font.render(self.text, True, (255, 255, 255))
+        text_surface = font.render(self.text, True, text_color)
         text_rect = text_surface.get_rect(center=self.rect.center)
         screen.blit(text_surface, text_rect)
 
@@ -121,7 +127,7 @@ class Player:
         self.cards: List[Card] = []
         self.is_active = True
         self.current_bet = 0
-        self.is_human = False
+        self.is_human = True  # Make all players human
         self.has_acted = False
         positions = [
             (600, 700),  # Bottom (Player 1)
@@ -147,10 +153,12 @@ class PokerGame:
         """
         pygame.init()
         pygame.font.init()
-        self.screen = pygame.display.set_mode((1400, 900))
+        self.SCREEN_WIDTH = 1400
+        self.SCREEN_HEIGHT = 900
+        self.screen = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
         pygame.display.set_caption("6-Max Poker")
         self.font = pygame.font.SysFont('Arial', 24)
-        
+
         self.num_players = num_players
         self.small_blind = small_blind
         self.big_blind = big_blind
@@ -167,8 +175,11 @@ class PokerGame:
         
         # Initialize UI elements
         self.action_buttons = self._create_action_buttons()
-        self.bet_slider = pygame.Rect(400, 750, 200, 20)
+        self.bet_slider = pygame.Rect(50, self.SCREEN_HEIGHT - 100, 200, 20)
         self.current_bet_amount = self.big_blind
+        
+        # Add action history tracking
+        self.action_history = []
         
         self.start_new_hand()
 
@@ -208,6 +219,9 @@ class PokerGame:
         
         # Set starting player (UTG)
         self.current_player_idx = (bb_pos + 1) % self.num_players
+
+        # Clear action history at the start of each hand
+        self.action_history = []
 
     def evaluate_hand(self, player: Player) -> Tuple[HandRank, List[int]]:
         """
@@ -333,8 +347,20 @@ class PokerGame:
             action (PlayerAction): The chosen action (fold, check, call, raise)
             bet_amount (Optional[int]): Amount to bet/raise if applicable
         """
+        # Record the action with bet amount if applicable
+        action_text = f"{player.name}: {action.value}"
+        if bet_amount is not None and action == PlayerAction.RAISE:
+            action_text += f" ${bet_amount}"
+        self.action_history.append(action_text)
+        # Keep only the last 10 actions
+        if len(self.action_history) > 10:
+            self.action_history.pop(0)
+        
         if action == PlayerAction.FOLD:
             player.is_active = False
+        elif action == PlayerAction.CHECK:
+            # No action needed for check, just mark player as acted
+            player.has_acted = True
         elif action == PlayerAction.CALL:
             call_amount = self.current_bet - player.current_bet
             player.stack -= call_amount
@@ -356,7 +382,10 @@ class PokerGame:
         
         if not self.check_round_completion():
             self._next_player()
-        elif self.round_ended:
+        elif self.current_phase != GamePhase.RIVER:
+            self.advance_phase()
+        else:
+            self.round_ended = True
             self.handle_showdown()
 
     def handle_showdown(self):
@@ -386,10 +415,10 @@ class PokerGame:
             Dict[PlayerAction, Button]: Dictionary mapping actions to button objects
         """
         buttons = {
-            PlayerAction.FOLD: Button(300, 650, 100, 40, "Fold", (200, 0, 0)),
-            PlayerAction.CHECK: Button(450, 650, 100, 40, "Check", (0, 200, 0)),
-            PlayerAction.CALL: Button(600, 650, 100, 40, "Call", (0, 0, 200)),
-            PlayerAction.RAISE: Button(750, 650, 100, 40, "Raise", (200, 200, 0))
+            PlayerAction.FOLD: Button(300, self.SCREEN_HEIGHT - 100, 100, 40, "Fold", (200, 0, 0)),
+            PlayerAction.CHECK: Button(450, self.SCREEN_HEIGHT - 100, 100, 40, "Check", (0, 200, 0)),
+            PlayerAction.CALL: Button(600, self.SCREEN_HEIGHT - 100, 100, 40, "Call", (0, 0, 200)),
+            PlayerAction.RAISE: Button(750, self.SCREEN_HEIGHT - 100, 100, 40, "Raise", (200, 200, 0))
         }
         return buttons
 
@@ -415,8 +444,6 @@ class PokerGame:
         starting_stack = 200 * self.big_blind
         for i in range(self.num_players):
             player = Player(f"Player {i+1}", starting_stack, i)
-            if i == 0:  # Make first player human
-                player.is_human = True
             players.append(player)
         return players
     
@@ -515,16 +542,41 @@ class PokerGame:
         for player in self.players:
             self._draw_player(player)
         
-        # Draw action buttons for human player's turn
+        # Draw current player indicator in bottom right
         current_player = self.players[self.current_player_idx]
-        if current_player.is_human:
-            for button in self.action_buttons.values():
-                button.draw(self.screen, self.font)
-            
-            # Draw bet slider
-            pygame.draw.rect(self.screen, (200, 200, 200), self.bet_slider)
-            bet_text = self.font.render(f"Bet: ${self.current_bet_amount}", True, (255, 255, 255))
-            self.screen.blit(bet_text, (450, 780))
+        current_player_text = self.font.render(f"Current Player: {current_player.name}", True, (255, 255, 255))
+        self.screen.blit(current_player_text, (self.SCREEN_WIDTH - 300, self.SCREEN_HEIGHT - 50))
+        
+        # Draw dealer button (D)
+        button_player = self.players[self.button_position]
+        button_x = button_player.x + 52
+        button_y = button_player.y + 80
+        pygame.draw.circle(self.screen, (255, 255, 255), (button_x, button_y), 15)
+        dealer_text = self.font.render("D", True, (0, 0, 0))
+        dealer_rect = dealer_text.get_rect(center=(button_x, button_y))
+        self.screen.blit(dealer_text, dealer_rect)
+        
+        # Update button states before drawing
+        self._update_button_states()
+        
+        # Draw action buttons for current player's turn
+        for button in self.action_buttons.values():
+            button.draw(self.screen, self.font)
+        
+        # Draw bet slider
+        pygame.draw.rect(self.screen, (200, 200, 200), self.bet_slider)
+        bet_text = self.font.render(f"Bet: ${self.current_bet_amount}", True, (255, 255, 255))
+        self.screen.blit(bet_text, (50, self.SCREEN_HEIGHT -75))
+        
+        # Draw action history in top right corner
+        history_x = self.SCREEN_WIDTH - 200
+        history_y = 50
+        history_text = self.font.render("Action History:", True, (255, 255, 255))
+        self.screen.blit(history_text, (history_x, history_y - 30))
+        
+        for i, action in enumerate(self.action_history):
+            text = self.font.render(action, True, (255, 255, 255))
+            self.screen.blit(text, (history_x, history_y + i * 25))
     
     def handle_input(self, event):
         """
@@ -536,16 +588,15 @@ class PokerGame:
             mouse_pos = pygame.mouse.get_pos()
             current_player = self.players[self.current_player_idx]
             
-            if current_player.is_human:
-                # Check button clicks
-                for action, button in self.action_buttons.items():
-                    if button.rect.collidepoint(mouse_pos):
-                        bet_amount = self.current_bet_amount if action == PlayerAction.RAISE else None
-                        self.process_action(current_player, action, bet_amount)
-                
-                # Check bet slider
-                if self.bet_slider.collidepoint(mouse_pos):
-                    self.current_bet_amount = (mouse_pos[0] - self.bet_slider.x) * 2
+            # Check button clicks
+            for action, button in self.action_buttons.items():
+                if button.rect.collidepoint(mouse_pos) and button.enabled:
+                    bet_amount = self.current_bet_amount if action == PlayerAction.RAISE else None
+                    self.process_action(current_player, action, bet_amount)
+            
+            # Check bet slider
+            if self.bet_slider.collidepoint(mouse_pos):
+                self.current_bet_amount = max((mouse_pos[0] - self.bet_slider.x) * 2, self.current_bet * 2)
     
     def _next_player(self):
         """
@@ -555,6 +606,31 @@ class PokerGame:
         self.current_player_idx = (self.current_player_idx + 1) % self.num_players
         while not self.players[self.current_player_idx].is_active:
             self.current_player_idx = (self.current_player_idx + 1) % self.num_players
+
+    def _update_button_states(self):
+        """
+        Update the enabled/disabled state of action buttons based on current game state.
+        """
+        current_player = self.players[self.current_player_idx]
+        
+        # Enable all buttons by default
+        for button in self.action_buttons.values():
+            button.enabled = True
+        
+        # Disable check if there's a bet to call
+        if current_player.current_bet < self.current_bet:
+            self.action_buttons[PlayerAction.CHECK].enabled = False
+        
+        # Disable call if no bet to call or not enough chips
+        if current_player.current_bet == self.current_bet:
+            self.action_buttons[PlayerAction.CALL].enabled = False
+        elif current_player.stack < (self.current_bet - current_player.current_bet):
+            self.action_buttons[PlayerAction.CALL].enabled = False
+        
+        # Disable raise if not enough chips
+        min_raise = self.current_bet * 2
+        if current_player.stack < min_raise:
+            self.action_buttons[PlayerAction.RAISE].enabled = False
 
     def run(self):
         """
