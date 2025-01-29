@@ -180,6 +180,13 @@ class PokerGame:
         # Add action history tracking
         self.action_history = []
         
+        # Add winner info tracking
+        self.winner_info = None
+        
+        # Add winner display timing
+        self.winner_display_start = 0
+        self.winner_display_duration = 5000  # 5 seconds in milliseconds
+        
         self.start_new_hand()
 
     def start_new_hand(self):
@@ -221,6 +228,9 @@ class PokerGame:
 
         # Clear action history at the start of each hand
         self.action_history = []
+        
+        # Reset winner info
+        self.winner_info = None
 
     def evaluate_hand(self, player: Player) -> Tuple[HandRank, List[int]]:
         """
@@ -303,17 +313,13 @@ class PokerGame:
         """
         active_players = [p for p in self.players if p.is_active]
         if len(active_players) == 1:
-            self.round_ended = True
             return True
         
         # Check if all active players have acted and bets are equal
         all_acted = all(p.has_acted for p in active_players)
         bets_equal = len(set(p.current_bet for p in active_players)) == 1
         
-        if all_acted and bets_equal:
-            self.round_ended = True
-            return True
-        return False
+        return all_acted and bets_equal
 
     def advance_phase(self):
         """
@@ -353,6 +359,10 @@ class PokerGame:
             action (PlayerAction): The chosen action (fold, check, call, raise)
             bet_amount (Optional[int]): Amount to bet/raise if applicable
         """
+        # Don't process actions during showdown
+        if self.current_phase == GamePhase.SHOWDOWN:
+            return
+            
         # Record the action with bet amount if applicable
         action_text = f"{player.name}: {action.value}"
         if bet_amount is not None and action == PlayerAction.RAISE:
@@ -389,7 +399,6 @@ class PokerGame:
         # Check if round is complete and handle next phase
         if self.check_round_completion():
             if self.current_phase == GamePhase.RIVER:
-                self.round_ended = True
                 self.handle_showdown()
             else:
                 self.advance_phase()
@@ -401,20 +410,30 @@ class PokerGame:
         Handle the showdown phase where remaining players reveal their hands.
         Evaluates hands, determines winner(s), and awards the pot.
         """
+        self.current_phase = GamePhase.SHOWDOWN
         active_players = [p for p in self.players if p.is_active]
+        
+        # Disable all action buttons during showdown
+        for button in self.action_buttons.values():
+            button.enabled = False
+        
         if len(active_players) == 1:
-            active_players[0].stack += self.pot
+            winner = active_players[0]
+            winner.stack += self.pot
+            self.winner_info = f"{winner.name} wins ${self.pot} (all others folded)"
         else:
             # Evaluate hands and find winner
             player_hands = [(player, self.evaluate_hand(player)) for player in active_players]
             player_hands.sort(key=lambda x: (x[1][0].value, x[1][1]), reverse=True)
             winner = player_hands[0][0]
             winner.stack += self.pot
+            winning_hand = player_hands[0][1][0].name.replace('_', ' ').title()
+            self.winner_info = f"{winner.name} wins ${self.pot} with {winning_hand}"
+            print('winner_info :', self.winner_info)
         
-        # Start new hand after a delay
-        pygame.time.wait(2000)
-        self.button_position = (self.button_position + 1) % self.num_players
-        self.start_new_hand()
+        # Set the winner display start time
+        self.winner_display_start = pygame.time.get_ticks()
+        self.winner_display_duration = 5000  # 5 seconds in milliseconds
 
     def _create_action_buttons(self) -> Dict[PlayerAction, Button]:
         """
@@ -507,8 +526,18 @@ class PokerGame:
         Args:
             player (Player): The player to draw
         """
+        # Draw neon effect for active player
+        if player.position == self.current_player_idx:
+            # Draw multiple circles with decreasing alpha for glow effect
+            for radius in range(40, 20, -5):
+                glow_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+                alpha = int(255 * (1 - (radius - 20) / 20))  # Fade from center
+                pygame.draw.circle(glow_surface, (0, 255, 255, alpha), (radius, radius), radius)  # Cyan glow
+                self.screen.blit(glow_surface, (player.x + 25 - radius, player.y + 35 - radius))
+        
         # Draw player info
-        name_text = self.font.render(f"{player.name} (${player.stack})", True, (255, 255, 255))
+        name_color = (0, 255, 255) if player.position == self.current_player_idx else (255, 255, 255)
+        name_text = self.font.render(f"{player.name} (${player.stack})", True, name_color)
         self.screen.blit(name_text, (player.x - 50, player.y - 40))
         
         # Draw player cards
@@ -589,7 +618,39 @@ class PokerGame:
         # Draw game info
         game_info_text = self.font.render(f"Game Info: {self.current_phase}", True, (255, 255, 255))
         self.screen.blit(game_info_text, (50, 50))
-    
+        
+        # Draw winner announcement if there is one and within display duration
+        if self.winner_info:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.winner_display_start < self.winner_display_duration:
+                # Create semi-transparent overlay
+                overlay = pygame.Surface((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
+                overlay.fill((0, 0, 0))
+                overlay.set_alpha(128)
+                self.screen.blit(overlay, (0, 0))
+                
+                # Draw winner text with shadow for better visibility
+                winner_font = pygame.font.SysFont('Arial', 48, bold=True)
+                shadow_text = winner_font.render(self.winner_info, True, (0, 0, 0))  # Shadow
+                winner_text = winner_font.render(self.winner_info, True, (255, 215, 0))  # Gold color
+                
+                # Position for center of screen
+                text_rect = winner_text.get_rect(center=(self.SCREEN_WIDTH // 2, self.SCREEN_HEIGHT // 2))
+                
+                # Draw shadow slightly offset
+                shadow_rect = text_rect.copy()
+                shadow_rect.x += 2
+                shadow_rect.y += 2
+                self.screen.blit(shadow_text, shadow_rect)
+                
+                # Draw main text
+                self.screen.blit(winner_text, text_rect)
+            else:
+                # After display duration, start new hand
+                self.winner_info = None
+                self.button_position = (self.button_position + 1) % self.num_players
+                self.start_new_hand()
+
     def handle_input(self, event):
         """
         Handle player input events.
