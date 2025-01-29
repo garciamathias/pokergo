@@ -158,7 +158,6 @@ class PokerGame:
         self.screen = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
         pygame.display.set_caption("6-Max Poker")
         self.font = pygame.font.SysFont('Arial', 24)
-
         self.num_players = num_players
         self.small_blind = small_blind
         self.big_blind = big_blind
@@ -312,11 +311,7 @@ class PokerGame:
         bets_equal = len(set(p.current_bet for p in active_players)) == 1
         
         if all_acted and bets_equal:
-            if self.current_phase == GamePhase.RIVER:
-                self.current_phase = GamePhase.SHOWDOWN
-                self.round_ended = True
-            else:
-                self.advance_phase()
+            self.round_ended = True
             return True
         return False
 
@@ -325,19 +320,30 @@ class PokerGame:
         Move the game to the next phase and deal appropriate community cards.
         Resets player states and betting for the new phase.
         """
-        phases = [GamePhase.PREFLOP, GamePhase.FLOP, GamePhase.TURN, GamePhase.RIVER]
-        current_index = phases.index(self.current_phase)
-        self.current_phase = phases[current_index + 1]
+        print(f"current_phase {self.current_phase}")
+        
+        if self.current_phase == GamePhase.PREFLOP:
+            self.current_phase = GamePhase.FLOP
+        elif self.current_phase == GamePhase.FLOP:
+            self.current_phase = GamePhase.TURN
+        elif self.current_phase == GamePhase.TURN:
+            self.current_phase = GamePhase.RIVER
+        
+        # Deal community cards for the new phase
         self.deal_community_cards()
         
-        # Reset player states for new phase
+        # Reset betting for new phase
+        self.current_bet = 0
         for player in self.players:
             if player.is_active:
                 player.has_acted = False
-        self.current_bet = 0
+                player.current_bet = 0
+        
+        # Set first player after dealer button
         self.current_player_idx = (self.button_position + 1) % self.num_players
         while not self.players[self.current_player_idx].is_active:
             self.current_player_idx = (self.current_player_idx + 1) % self.num_players
+        
 
     def process_action(self, player: Player, action: PlayerAction, bet_amount: Optional[int] = None):
         """
@@ -380,13 +386,15 @@ class PokerGame:
         
         player.has_acted = True
         
-        if not self.check_round_completion():
-            self._next_player()
-        elif self.current_phase != GamePhase.RIVER:
-            self.advance_phase()
+        # Check if round is complete and handle next phase
+        if self.check_round_completion():
+            if self.current_phase == GamePhase.RIVER:
+                self.round_ended = True
+                self.handle_showdown()
+            else:
+                self.advance_phase()
         else:
-            self.round_ended = True
-            self.handle_showdown()
+            self._next_player()
 
     def handle_showdown(self):
         """
@@ -577,6 +585,10 @@ class PokerGame:
         for i, action in enumerate(self.action_history):
             text = self.font.render(action, True, (255, 255, 255))
             self.screen.blit(text, (history_x, history_y + i * 25))
+        
+        # Draw game info
+        game_info_text = self.font.render(f"Game Info: {self.current_phase}", True, (255, 255, 255))
+        self.screen.blit(game_info_text, (50, 50))
     
     def handle_input(self, event):
         """
@@ -667,3 +679,4 @@ class PokerGame:
 if __name__ == "__main__":
     game = PokerGame()
     game.run()
+

@@ -1,14 +1,10 @@
-Architecture:
+# Architecture:
 
 - poker_game.py: PokerGame class that manages the poker game defined in pygame (if the file is executed, the poker game launches in human free play mode)
 - poker_agents.py: PokerAgent class that defines the architecture and training methods for agents (each agent is defined by the same class)
 - poker_train.py: Orchestrates the training of agents
 - main.py: Launches the training
 - config.py: Contains the training parameters
-
-
-
-
 
 
 # 6-Player Poker: Rules and Gameplay
