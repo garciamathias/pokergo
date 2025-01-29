@@ -171,6 +171,7 @@ class PokerGame:
         self.current_bet = self.big_blind
         self.last_raiser = None
         self.round_ended = False
+        self.clock = pygame.time.Clock()
         
         # Initialize UI elements
         self.action_buttons = self._create_action_buttons()
@@ -187,6 +188,9 @@ class PokerGame:
         self.winner_display_start = 0
         self.winner_display_duration = 5000  # 5 seconds in milliseconds
         
+        self.start_new_hand()
+
+    def reset(self):
         self.start_new_hand()
 
     def start_new_hand(self):
@@ -727,8 +731,18 @@ class PokerGame:
         min_raise = max(self.current_bet * 2, self.big_blind * 2)
         if current_player.stack + current_player.current_bet < min_raise:
             self.action_buttons[PlayerAction.RAISE].enabled = False
+    
+    def get_state(self):
+        state = []
+        for player in self.players:
+            state.append(player.stack)
+        return state
+    
+    def step(self, action):
+        self.process_action(self.players[self.current_player_idx], action)
+        return self.get_state()
 
-    def run(self):
+    def manual_run(self):
         """
         Main game loop.
         Handles game flow, player turns, and updates display.
@@ -762,5 +776,5 @@ class PokerGame:
 
 if __name__ == "__main__":
     game = PokerGame()
-    game.run()
+    game.manual_run()
 
