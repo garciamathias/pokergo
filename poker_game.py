@@ -193,9 +193,51 @@ class PokerGame:
 
     def reset(self):
         """
-        Reset the game state for a new hand. Almost reinitalizes the game.
+        Reset the game state for a new hand. Reinitializes the game.
         """
-        self.start_new_hand()
+        # Reset game state variables
+        self.pot = 0
+        self.community_cards = []
+        self.current_phase = GamePhase.PREFLOP
+        self.deck = self._create_deck()
+        self.winner_info = None
+        self.winner_display_start = 0
+        self.round_number = 0
+        self.action_history = []
+        
+        # Reset player states
+        for player in self.players:
+            player.cards = []
+            player.current_bet = 0
+            player.is_active = True
+            player.has_acted = False
+            player.stack = 200 * self.big_blind  # Reset to starting stack
+        
+        # Reset button and blinds
+        self.button_position = (self.button_position + 1) % self.num_players
+        sb_pos = (self.button_position + 1) % self.num_players
+        bb_pos = (self.button_position + 2) % self.num_players
+        
+        # Post blinds
+        self.players[sb_pos].stack -= self.small_blind
+        self.players[sb_pos].current_bet = self.small_blind
+        self.players[bb_pos].stack -= self.big_blind
+        self.players[bb_pos].current_bet = self.big_blind
+        
+        self.pot = self.small_blind + self.big_blind
+        self.current_bet = self.big_blind
+        
+        # Deal cards
+        self.deal_cards()
+        
+        # Set starting player (UTG)
+        self.current_player_idx = (bb_pos + 1) % self.num_players
+        
+        # Reset betting state
+        self.last_raiser = None
+        self.round_ended = False
+        
+        return self.get_state()
 
     def start_new_hand(self):
         """
