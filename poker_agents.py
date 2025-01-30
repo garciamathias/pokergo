@@ -30,7 +30,14 @@ class PokerAgent:
     def load(self):
         self.model.load_state_dict(torch.load('saved_models/poker_agent.pth'))
 
-    def get_action(self, state, epsilon):
+    def get_action(self, state, epsilon, valid_actions=None):
+        """
+        Get an action from the agent.
+        Args:
+            state: Current game state
+            epsilon: Exploration rate
+            valid_actions: List of currently valid PlayerActions
+        """
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
         self.model.eval()
         with torch.no_grad():
@@ -40,19 +47,43 @@ class PokerAgent:
         # Since we only have one action group (check, call, fold, raise)
         action_probs = action_probs_grouped[0]
         
-        if random.random() < epsilon:  # Exploration
-            action = random.randint(0, action_probs.size(1) - 1)
-        else:
-            action = torch.argmax(action_probs, dim=1).item()
-        
-        # Convert numerical action to PlayerAction enum
+        # Create action map
         action_map = {
             0: PlayerAction.CHECK,
             1: PlayerAction.CALL,
             2: PlayerAction.FOLD,
             3: PlayerAction.RAISE
         }
-        return action_map[action]
+        
+        # Create reverse map for masking
+        reverse_map = {v: k for k, v in action_map.items()}
+        
+        # Create action mask based on valid actions
+        if valid_actions:
+            # Create a mask of zeros
+            mask = torch.zeros_like(action_probs)
+            # Set 1s for valid actions
+            for action in valid_actions:
+                mask[0, reverse_map[action]] = 1
+            # Apply mask to probabilities
+            action_probs = action_probs * mask
+            # Renormalize probabilities
+            action_probs = action_probs / (action_probs.sum() + 1e-10)
+        
+        if random.random() < epsilon:  # Exploration
+            if valid_actions:
+                action = action_map[random.choice([reverse_map[a] for a in valid_actions])]
+            else:
+                action = action_map[random.randint(0, action_probs.size(1) - 1)]
+        else:
+            if valid_actions:
+                valid_indices = [reverse_map[a] for a in valid_actions]
+                valid_probs = action_probs[0, valid_indices]
+                action = action_map[valid_indices[torch.argmax(valid_probs).item()]]
+            else:
+                action = action_map[torch.argmax(action_probs, dim=1).item()]
+        
+        return action
 
     def remember(self, state, action, reward, next_state, done):
         # Convert PlayerAction enum to numerical action for training

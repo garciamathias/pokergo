@@ -846,15 +846,76 @@ class PokerGame:
         return state
 
     def step(self, action):
+        """
+        Process a player's action and update game state.
+        
+        The reward system is structured as follows:
+        - Invalid actions: -10 (actions that are not allowed in current state)
+        - Invalid raise amount: -5 (raises below minimum or insufficient chips)
+        - Fold: -1 (giving up the hand)
+        - Check: 0 (neutral action)
+        - Call: 1 (matching the current bet)
+        - Valid raise: 2 (increasing the betting)
+        
+        The method also handles:
+        - Converting invalid raises to calls
+        - Ensuring minimum raise requirements
+        - Managing chip movements between player stacks and pot
+        - Updating player states and bet amounts
+        
+        Args:
+            action: PlayerAction enum value representing the chosen action
+            
+        Returns:
+            tuple: (next_state, reward) where next_state is the new game state 
+            and reward is the numerical feedback for the action
+        """
+        current_player = self.players[self.current_player_idx]
         reward = 0
-        action = self.process_action(self.players[self.current_player_idx], action)
-        if action == PlayerAction.FOLD:
-            reward = -1
-        elif action == PlayerAction.CALL:
-            reward = 1
-        elif action == PlayerAction.RAISE:
-            reward = 2
+        
+        if not self.action_buttons[action].enabled:
+            reward = -40
+            valid_actions = [a for a in PlayerAction if self.action_buttons[a].enabled]
+            action = rd.choice(valid_actions)
 
+        if action == PlayerAction.RAISE:
+            min_raise = max(self.current_bet * 2, self.big_blind * 2)
+            
+            if self.current_bet_amount < min_raise:
+                reward = -5
+                action = PlayerAction.CALL
+            else:
+                raise_amount = self.current_bet_amount - current_player.current_bet
+                raise_amount = max(raise_amount, min_raise - current_player.current_bet)
+                raise_amount = min(raise_amount, current_player.stack)
+                
+                if raise_amount >= min_raise - current_player.current_bet:
+                    current_player.stack -= raise_amount
+                    current_player.current_bet += raise_amount
+                    self.current_bet = current_player.current_bet
+                    self.pot += raise_amount
+                    reward = 2
+                else:
+                    reward = -5
+                    action = PlayerAction.CALL
+
+        if action == PlayerAction.CALL:
+            call_amount = self.current_bet - current_player.current_bet
+            call_amount = min(call_amount, current_player.stack)
+            current_player.stack -= call_amount
+            current_player.current_bet += call_amount
+            self.pot += call_amount
+            reward = 1 if reward == 0 else reward
+
+        elif action == PlayerAction.FOLD:
+            current_player.is_active = False
+            reward = -1 if reward == 0 else reward
+            
+        elif action == PlayerAction.CHECK:
+            reward = 0 if reward == 0 else reward
+
+        self.process_action(current_player, action)
+        
         return self.get_state(), reward
 
     def manual_run(self):
@@ -881,13 +942,6 @@ class PokerGame:
                 mouse_pos = pygame.mouse.get_pos()
                 for button in self.action_buttons.values():
                     button.is_hovered = button.rect.collidepoint(mouse_pos)
-            
-            # AI players' turns
-            current_player = self.players[self.current_player_idx]
-            if not current_player.is_human and current_player.is_active:
-                # Simple AI decision (can be improved)
-                action = rd.choice([PlayerAction.CALL, PlayerAction.FOLD])
-                self.process_action(current_player, action)
             
             self._draw()
             pygame.display.flip()

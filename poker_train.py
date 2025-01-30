@@ -5,18 +5,17 @@ import pygame
 import torch
 import time
 from poker_agents import PokerAgent
-from poker_game import PokerGame, GamePhase
+from poker_game import PokerGame, GamePhase, PlayerAction
 import matplotlib.pyplot as plt
 from vizualization import plot_rewards, update_rewards_history
 
 # Hyperparameters
-EPISODES = 400
+EPISODES = 1000
 GAMMA = 0.9985
-ALPHA = 0.001
-GLOBAL_N = 11
-EPS_DECAY = 0.98
+ALPHA = 0.003
+EPS_DECAY = 0.995
 STATE_SIZE = 44
-RENDERING = True
+RENDERING = False
 
 def set_seed(seed=42):
     rd.seed(seed)
@@ -41,14 +40,17 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         current_player = env.players[env.current_player_idx]
         current_agent = agent_list[env.current_player_idx]
         
-        # Get state and action
+        # Get state and valid actions
         state = env.get_state()
-        action = current_agent.get_action(state, epsilon)
+        valid_actions = [a for a in PlayerAction if env.action_buttons[a].enabled]
+        
+        # Get action from agent with valid actions
+        action = current_agent.get_action(state, epsilon, valid_actions)
         
         # Take action and get next state
         next_state, reward = env.step(action)
         
-        # Store experience (we'll calculate reward at the end)
+        # Store experience
         current_agent.remember(state, action, reward, next_state, False)
         
         # If all players have folded except one, end the episode
@@ -69,7 +71,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
             pygame.display.flip()
             
             # Control frame rate
-            env.clock.tick(1)  # 30 FPS
+            env.clock.tick(30)  # 30 FPS
     
     # Calculate final rewards based on stack changes
     for i, player in enumerate(env.players):
