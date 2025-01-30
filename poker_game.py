@@ -57,6 +57,7 @@ class PlayerAction(Enum):
     CHECK = "check"
     CALL = "call"
     RAISE = "raise"
+    ALL_IN = "all-in"
 
 class GamePhase(Enum):
     """
@@ -465,6 +466,26 @@ class PokerGame:
                 if p != player and p.is_active:
                     p.has_acted = False
         
+        elif action == PlayerAction.ALL_IN:
+            # Calculer le montant total du tapis
+            all_in_amount = player.stack + player.current_bet
+            # Mettre à jour les mises et le pot
+            total_to_put_in = player.stack
+            player.stack = 0
+            player.current_bet = all_in_amount
+            self.pot += total_to_put_in
+            
+            # Mettre à jour la mise actuelle si c'est la plus grande
+            if all_in_amount > self.current_bet:
+                self.current_bet = all_in_amount
+                self.last_raiser = player
+                # Réinitialiser has_acted pour les autres joueurs
+                for p in self.players:
+                    if p != player and p.is_active:
+                        p.has_acted = False
+            
+            print(f"{player.name} fait tapis avec ${all_in_amount}")
+        
         player.has_acted = True
         
         # Debug print for post-action state
@@ -537,7 +558,8 @@ class PokerGame:
             PlayerAction.FOLD: Button(300, self.SCREEN_HEIGHT - 100, 100, 40, "Fold", (200, 0, 0)),
             PlayerAction.CHECK: Button(450, self.SCREEN_HEIGHT - 100, 100, 40, "Check", (0, 200, 0)),
             PlayerAction.CALL: Button(600, self.SCREEN_HEIGHT - 100, 100, 40, "Call", (0, 0, 200)),
-            PlayerAction.RAISE: Button(750, self.SCREEN_HEIGHT - 100, 100, 40, "Raise", (200, 200, 0))
+            PlayerAction.RAISE: Button(750, self.SCREEN_HEIGHT - 100, 100, 40, "Raise", (200, 200, 0)),
+            PlayerAction.ALL_IN: Button(900, self.SCREEN_HEIGHT - 100, 100, 40, "All-in", (150, 0, 150))
         }
         return buttons
 
@@ -828,6 +850,9 @@ class PokerGame:
         # If Check is enabled, disable fold
         if self.action_buttons[PlayerAction.CHECK].enabled:
             self.action_buttons[PlayerAction.FOLD].enabled = False
+        
+        # All-in toujours disponible si le joueur a des jetons
+        self.action_buttons[PlayerAction.ALL_IN].enabled = current_player.stack > 0
     
     def get_state(self):
         """
