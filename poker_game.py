@@ -894,10 +894,6 @@ class PokerGame:
         The reward system is structured as follows:
         - Invalid actions: -10 (actions that are not allowed in current state)
         - Invalid raise amount: -5 (raises below minimum or insufficient chips)
-        - Fold: -1 (giving up the hand)
-        - Check: 0 (neutral action)
-        - Call: 1 (matching the current bet)
-        - Valid raise: 2 (increasing the betting)
         
         The method also handles:
         - Converting invalid raises to calls
@@ -942,10 +938,7 @@ class PokerGame:
                 current_player.current_bet += raise_amount
                 self.current_bet = current_player.current_bet
                 self.pot += raise_amount
-                reward = 2
             else:
-                # Not enough chips, convert to call
-                reward = -5
                 action = PlayerAction.CALL
 
         if action == PlayerAction.CALL:
@@ -954,14 +947,9 @@ class PokerGame:
             current_player.stack -= call_amount
             current_player.current_bet += call_amount
             self.pot += call_amount
-            reward = 1 if reward == 0 else reward
 
         elif action == PlayerAction.FOLD:
             current_player.is_active = False
-            reward = -1 if reward == 0 else reward
-            
-        elif action == PlayerAction.CHECK:
-            reward = 0 if reward == 0 else reward
 
         self.process_action(current_player, action)
         
