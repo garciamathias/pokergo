@@ -914,6 +914,7 @@ class PokerGame:
         """
         current_player = self.players[self.current_player_idx]
         reward = 0
+
         
         if not self.action_buttons[action].enabled:
             reward = -40
@@ -921,25 +922,31 @@ class PokerGame:
             action = rd.choice(valid_actions)
 
         if action == PlayerAction.RAISE:
-            min_raise = max(self.current_bet * 2, self.big_blind * 2)
+            # To implement :
+            # self.current_bet_amount = Raise_Calculator_Model(self.get_state())
             
-            if self.current_bet_amount < min_raise:
+            # Calculate minimum and maximum raise amounts
+            min_raise = max(self.current_bet * 2, self.big_blind * 2)
+            max_raise = current_player.stack + current_player.current_bet
+            
+            # Ensure current_bet_amount is within valid range
+            self.current_bet_amount = max(min_raise, self.current_bet_amount)
+            self.current_bet_amount = min(max_raise, self.current_bet_amount)
+            
+            # Calculate actual raise amount
+            raise_amount = self.current_bet_amount - current_player.current_bet
+            
+            if raise_amount <= current_player.stack:  # Player has enough chips
+                # Process the raise
+                current_player.stack -= raise_amount
+                current_player.current_bet += raise_amount
+                self.current_bet = current_player.current_bet
+                self.pot += raise_amount
+                reward = 2
+            else:
+                # Not enough chips, convert to call
                 reward = -5
                 action = PlayerAction.CALL
-            else:
-                raise_amount = self.current_bet_amount - current_player.current_bet
-                raise_amount = max(raise_amount, min_raise - current_player.current_bet)
-                raise_amount = min(raise_amount, current_player.stack)
-                
-                if raise_amount >= min_raise - current_player.current_bet:
-                    current_player.stack -= raise_amount
-                    current_player.current_bet += raise_amount
-                    self.current_bet = current_player.current_bet
-                    self.pot += raise_amount
-                    reward = 2
-                else:
-                    reward = -5
-                    action = PlayerAction.CALL
 
         if action == PlayerAction.CALL:
             call_amount = self.current_bet - current_player.current_bet

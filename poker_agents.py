@@ -46,7 +46,7 @@ class PokerAgent:
 
         # Since we only have one action group (check, call, fold, raise)
         action_probs = action_probs_grouped[0]
-        
+
         # Create action map
         action_map = {
             0: PlayerAction.CHECK,
@@ -69,6 +69,7 @@ class PokerAgent:
             action_probs = action_probs * mask
             # Renormalize probabilities
             action_probs = action_probs / (action_probs.sum() + 1e-10)
+
         
         if random.random() < epsilon:  # Exploration
             if valid_actions:
@@ -82,7 +83,7 @@ class PokerAgent:
                 action = action_map[valid_indices[torch.argmax(valid_probs).item()]]
             else:
                 action = action_map[torch.argmax(action_probs, dim=1).item()]
-        
+                
         return action
 
     def remember(self, state, action, reward, next_state, done):

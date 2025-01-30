@@ -10,12 +10,13 @@ import matplotlib.pyplot as plt
 from vizualization import plot_rewards, update_rewards_history
 
 # Hyperparameters
-EPISODES = 1000
+EPISODES = 3000
 GAMMA = 0.9985
 ALPHA = 0.003
 EPS_DECAY = 0.9998
 STATE_SIZE = 44
 RENDERING = False
+FPS = 1
 
 def set_seed(seed=42):
     rd.seed(seed)
@@ -32,7 +33,6 @@ def set_seed(seed=42):
 def run_episode(agent_list, epsilon, rendering, episode, render_every):
     env = PokerGame()
     env.reset()
-    done = False
     reward_list = np.zeros(len(agent_list))
     
     # Store initial stacks for reward calculation
@@ -74,7 +74,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
             pygame.display.flip()
             
             # Control frame rate
-            env.clock.tick(30)  # 30 FPS
+            env.clock.tick(FPS)
     
     # Calculate final rewards based on stack changes
     active_players_count = sum(1 for p in env.players if p.is_active)
