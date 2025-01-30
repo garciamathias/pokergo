@@ -172,6 +172,7 @@ class PokerGame:
         self.last_raiser = None
         self.round_ended = False
         self.clock = pygame.time.Clock()
+        self.round_number = 0  # Initialize round number
         
         # Initialize UI elements
         self.action_buttons = self._create_action_buttons()
@@ -205,6 +206,7 @@ class PokerGame:
         self.current_bet = self.big_blind
         self.last_raiser = None
         self.round_ended = False
+        self.round_number = 0  # Reset round number for new hand
         
         # Reset player states
         for player in self.players:
@@ -339,6 +341,9 @@ class PokerGame:
         elif self.current_phase == GamePhase.TURN:
             self.current_phase = GamePhase.RIVER
         
+        # Increment round number when moving to a new phase
+        self.round_number += 1
+        
         # Deal community cards for the new phase
         self.deal_community_cards()
         
@@ -353,7 +358,6 @@ class PokerGame:
         self.current_player_idx = (self.button_position + 1) % self.num_players
         while not self.players[self.current_player_idx].is_active:
             self.current_player_idx = (self.current_player_idx + 1) % self.num_players
-        
 
     def process_action(self, player: Player, action: PlayerAction, bet_amount: Optional[int] = None):
         """
@@ -471,7 +475,7 @@ class PokerGame:
             List[Player]: List of initialized player objects
         """
         players = []
-        starting_stack = 200 * self.big_blind
+        starting_stack = 200 * self.big_blind # starting stack is 400$
         for i in range(self.num_players):
             player = Player(f"Player {i+1}", starting_stack, i)
             players.append(player)
@@ -733,11 +737,106 @@ class PokerGame:
             self.action_buttons[PlayerAction.RAISE].enabled = False
     
     def get_state(self):
+        """
+        Get the current state of the game for the RL agent.
+        Returns a list containing:
+        - Cards info (player's cards and community cards)
+        - Bets info (current bets of all players)
+        - Position info (relative positions of players)
+        - Activity info (which players are still active)
+        - Round info (current phase, current bet)
+        - Available actions (which actions are valid)
+        - Previous actions
+        - Money left (stack sizes)
+        """
+        current_player = self.players[self.current_player_idx]
         state = []
+
+        # 1. Cards information (normalized values 2-14 -> 0-1)
+        # Player's cards
+        for card in current_player.cards:
+            state.append((card.value - 2) / 12)  # Normalize card values
+        # Community cards
+        flop = [-1] * 3
+        turn = [-1]
+        river = [-1]
+        for i, card in enumerate(self.community_cards):
+            if i < 3:
+                flop[i] = (card.value - 2) / 12
+            elif i == 3:
+                turn[0] = (card.value - 2) / 12
+            else:
+                river[0] = (card.value - 2) / 12
+        state.extend(flop + turn + river)
+
+        # 2. Round information
+        phase_values = {
+            GamePhase.PREFLOP: 0,
+            GamePhase.FLOP: 0.25,
+            GamePhase.TURN: 0.5,
+            GamePhase.RIVER: 0.75,
+            GamePhase.SHOWDOWN: 1
+        }
+        state.append(phase_values[self.current_phase])
+
+        # 3. Round number
+        state.append(self.round_number)
+
+        # 4. Current bet normalized by big blind
+        state.append(self.current_bet / self.big_blind)
+
+         # 5. Money left (stack sizes normalized by initial stack)
+        initial_stack = 200 * self.big_blind
         for player in self.players:
-            state.append(player.stack)
+            state.append(player.stack / initial_stack)
+
+        # 6. Bets information (normalized by big blind)
+        for player in self.players:
+            state.append(player.current_bet / self.big_blind)
+
+        # 7. Activity information (extreme binary: active/folded)
+        for player in self.players:
+            state.append(1 if player.is_active else -1)
+
+        # 8. Position information (one-hot encoded relative positions)
+        relative_positions = [0.1] * self.num_players
+        for i in range(self.num_players):
+            relative_pos = (i - self.current_player_idx) % self.num_players
+            relative_positions[relative_pos] = 1
+        state.extend(relative_positions)
+
+        # 9. Available actions (extreme binary: available/unavailable)
+        action_availability = []
+        for action in PlayerAction:
+            if action in self.action_buttons and self.action_buttons[action].enabled:
+                action_availability.append(1)
+            else:
+                action_availability.append(-1)
+        state.extend(action_availability)
+
+        # 10. Previous actions (last action of each player, encoded)
+        action_encoding = {
+            None: 0,
+            PlayerAction.FOLD: 1,
+            PlayerAction.CHECK: 2,
+            PlayerAction.CALL: 3,
+            PlayerAction.RAISE: 4
+        }
+        # Get last action for each player from action history
+        last_actions = [0] * self.num_players  # Default to 0 (beginning of game)
+        for action_text in reversed(self.action_history[-self.num_players:]):
+            if ":" in action_text:
+                player_name, action = action_text.split(":")
+                player_idx = int(player_name.split()[-1]) - 1
+                action = action.strip()
+                for action_type in PlayerAction:
+                    if action_type.value in action:
+                        last_actions[player_idx] = action_encoding[action_type]
+                        break
+        state.extend(last_actions)
+
         return state
-    
+
     def step(self, action):
         self.process_action(self.players[self.current_player_idx], action)
         return self.get_state()

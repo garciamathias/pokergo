@@ -14,8 +14,9 @@ GAMMA = 0.9985
 ALPHA = 0.001
 GLOBAL_N = 11
 EPS_DECAY = 0.98
-STATE_SIZE = 6
-RENDERING = True
+STATE_SIZE = 44
+RENDERING = False
+
 def set_seed(seed=42):
     rd.seed(seed)
     np.random.seed(seed)
@@ -71,7 +72,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
     
     # Calculate final rewards based on stack changes
     for i, player in enumerate(env.players):
-        reward_list[i] = player.stack - 200  # Assuming initial stack was 200
+        reward_list[i] = player.stack - 400
     
     # Train all agents
     for agent in agent_list:
@@ -100,7 +101,7 @@ def main_training_loop(agent_list, episodes, rendering, render_every = 10):
                 print(f"Agent {i+1} reward: {reward:.2f}")
 
             # Save the trained models every 50 episodes
-            if episode % 50 == 49:
+            if episode == EPISODES - 1:
                 print("\nSaving models...")
                 for agent in agent_list:
                     torch.save(agent.model.state_dict(), f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
