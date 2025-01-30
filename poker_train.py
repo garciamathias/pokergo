@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from vizualization import plot_rewards, update_rewards_history
 
 # Hyperparameters
-EPISODES = 1000
+EPISODES = 10000
 GAMMA = 0.9985
 ALPHA = 0.003
 EPS_DECAY = 0.995

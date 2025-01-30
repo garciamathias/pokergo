@@ -167,7 +167,7 @@ class PokerGame:
         self.current_phase = GamePhase.PREFLOP
         self.players = self._initialize_players()
         self.button_position = rd.randint(0, self.num_players - 1)
-        self.current_player_idx = (self.button_position + 1)
+        self.current_player_idx = (self.button_position + 1) % self.num_players
         self.current_bet = self.big_blind
         self.last_raiser = None
         self.round_ended = False
