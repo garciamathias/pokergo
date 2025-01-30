@@ -4,12 +4,12 @@ from typing import List, Dict
 import seaborn as sns
 import os
 
-def plot_wins(wins_history: Dict[str, List[int]], window_size: int = 50, save_path: str = "viz_pdf/poker_wins.jpg"):
+def plot_rewards(rewards_history: Dict[str, List[float]], window_size: int = 50, save_path: str = "viz_rewards.jpg"):
     """
-    Plot the win rate curves for each player with a moving average.
+    Plot the mean reward curves for each player with a moving average.
     
     Args:
-        wins_history (Dict[str, List[int]]): Dictionary mapping player names to their win histories (1 for win, 0 for loss)
+        rewards_history (Dict[str, List[float]]): Dictionary mapping player names to their reward histories
         window_size (int): Size of the moving average window
         save_path (str): Path where to save the JPEG plot
     """
@@ -17,72 +17,84 @@ def plot_wins(wins_history: Dict[str, List[int]], window_size: int = 50, save_pa
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else '.', exist_ok=True)
         
+        # Clear any existing plots
         plt.clf()
         plt.close('all')
         
+        # Create new figure with high DPI
         plt.figure(figsize=(12, 8), dpi=300)
+        
+        # Set style - using a built-in style instead of seaborn
         plt.style.use('bmh')
         
+        # Set color palette manually
         colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF']
         
-        for i, (player_name, wins) in enumerate(wins_history.items()):
-            if len(wins) < window_size:
-                print(f"Warning: Not enough data points for {player_name} to calculate win rate")
+        # Plot for each player
+        for i, (player_name, rewards) in enumerate(rewards_history.items()):
+            if len(rewards) < window_size:
+                print(f"Warning: Not enough data points for {player_name} to calculate moving average")
                 continue
                 
-            # Calculate win rate (moving average)
-            win_rate = np.convolve(wins, np.ones(window_size)/window_size, mode='valid')
-            episodes = range(len(win_rate))
+            # Calculate moving average
+            moving_avg = np.convolve(rewards, np.ones(window_size)/window_size, mode='valid')
+            episodes = range(len(moving_avg))
             
-            plt.plot(episodes, win_rate, 
-                    label=f'{player_name} Win Rate (MA{window_size})',
+            # Plot the moving average with cycling colors
+            plt.plot(episodes, moving_avg, 
+                    label=f'{player_name} (MA{window_size})',
                     color=colors[i % len(colors)],
                     linewidth=1.5)
         
-        plt.title('Win Rate per Player Over Time', fontsize=14, pad=20)
+        # Customize plot
+        plt.title('Mean Reward per Player Over Time', fontsize=14, pad=20)
         plt.xlabel('Episode', fontsize=12)
-        plt.ylabel('Win Rate', fontsize=12)
+        plt.ylabel('Mean Reward', fontsize=12)
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         plt.grid(True, alpha=0.3)
         
+        # Adjust layout to prevent label cutoff
         plt.tight_layout()
         
+        # Save plot as JPEG with high quality
         plt.savefig(save_path, 
                    format='jpg',
                    bbox_inches='tight',
                    dpi=300,
                    pad_inches=0.1)
         
+        # Close all figures to free memory
         plt.close('all')
         
-        print(f"Successfully saved win rate plot to {save_path}")
+        print(f"Successfully saved plot to {save_path}")
         
     except Exception as e:
         print(f"Error while creating plot: {str(e)}")
+        # Clean up in case of error
         plt.close('all')
 
-def update_wins_history(wins_history: Dict[str, List[int]], 
-                       winner_name: str,
-                       agent_list: List) -> Dict[str, List[int]]:
+def update_rewards_history(rewards_history: Dict[str, List[float]], 
+                         episode_rewards: List[float], 
+                         agent_list: List) -> Dict[str, List[float]]:
     """
-    Update the wins history dictionary with new episode winner.
+    Update the rewards history dictionary with new episode rewards.
     
     Args:
-        wins_history (Dict[str, List[int]]): Current wins history
-        winner_name (str): Name of the winning player
+        rewards_history (Dict[str, List[float]]): Current rewards history
+        episode_rewards (List[float]): Rewards from the current episode
         agent_list (List): List of agents
         
     Returns:
-        Dict[str, List[int]]: Updated wins history
+        Dict[str, List[float]]: Updated rewards history
     """
     try:
-        for agent in agent_list:
-            if agent.name not in wins_history:
-                wins_history[agent.name] = []
-            # Add 1 for win, 0 for loss
-            wins_history[agent.name].append(1 if agent.name == winner_name else 0)
+        for i, reward in enumerate(episode_rewards):
+            player_name = agent_list[i].name
+            if player_name not in rewards_history:
+                rewards_history[player_name] = []
+            rewards_history[player_name].append(reward)
         
-        return wins_history
+        return rewards_history
     except Exception as e:
-        print(f"Error while updating wins history: {str(e)}")
-        return wins_history
+        print(f"Error while updating rewards history: {str(e)}")
+        return rewards_history
