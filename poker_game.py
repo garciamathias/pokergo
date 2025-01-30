@@ -415,6 +415,15 @@ class PokerGame:
         if self.current_phase == GamePhase.SHOWDOWN:
             return
             
+        # Debug print for action start
+        print(f"\n=== Action by {player.name} ===")
+        print(f"Action: {action.value}")
+        print(f"Current phase: {self.current_phase}")
+        print(f"Current pot: ${self.pot}")
+        print(f"Current bet: ${self.current_bet}")
+        print(f"Player stack before: ${player.stack}")
+        print(f"Player current bet: ${player.current_bet}")
+        
         # Record the action with bet amount if applicable
         action_text = f"{player.name}: {action.value}"
         if bet_amount is not None and action == PlayerAction.RAISE:
@@ -426,14 +435,20 @@ class PokerGame:
         
         if action == PlayerAction.FOLD:
             player.is_active = False
+            print(f"{player.name} folds")
+            
         elif action == PlayerAction.CHECK:
             # No action needed for check, just mark player as acted
             player.has_acted = True
+            print(f"{player.name} checks")
+            
         elif action == PlayerAction.CALL:
             call_amount = self.current_bet - player.current_bet
             player.stack -= call_amount
             player.current_bet = self.current_bet
             self.pot += call_amount
+            print(f"{player.name} calls ${call_amount}")
+            
         elif action == PlayerAction.RAISE and bet_amount is not None:
             # Calculate the total amount player needs to put in
             total_to_put_in = bet_amount - player.current_bet
@@ -444,6 +459,7 @@ class PokerGame:
             self.current_bet = bet_amount
             self.pot += total_to_put_in
             self.last_raiser = player
+            print(f"{player.name} raises to ${bet_amount} (putting in ${total_to_put_in})")
             # Reset has_acted for other players when there's a raise
             for p in self.players:
                 if p != player and p.is_active:
@@ -451,14 +467,23 @@ class PokerGame:
         
         player.has_acted = True
         
+        # Debug print for post-action state
+        print(f"Player stack after: ${player.stack}")
+        print(f"New pot: ${self.pot}")
+        print(f"Active players: {sum(1 for p in self.players if p.is_active)}")
+        
         # Check if round is complete and handle next phase
         if self.check_round_completion():
+            print("Round complete - advancing phase")
             if self.current_phase == GamePhase.RIVER:
+                print("River complete - going to showdown")
                 self.handle_showdown()
             else:
                 self.advance_phase()
+                print(f"Advanced to {self.current_phase}")
         else:
             self._next_player()
+            print(f"Next player: {self.players[self.current_player_idx].name}")
         
         return action
 
@@ -467,8 +492,10 @@ class PokerGame:
         Handle the showdown phase where remaining players reveal their hands.
         Evaluates hands, determines winner(s), and awards the pot.
         """
+        print("\n=== SHOWDOWN ===")
         self.current_phase = GamePhase.SHOWDOWN
         active_players = [p for p in self.players if p.is_active]
+        print(f"Active players in showdown: {[p.name for p in active_players]}")
         
         # Disable all action buttons during showdown
         for button in self.action_buttons.values():
@@ -478,15 +505,23 @@ class PokerGame:
             winner = active_players[0]
             winner.stack += self.pot
             self.winner_info = f"{winner.name} wins ${self.pot} (all others folded)"
+            print(f"Winner by fold: {winner.name}")
+            print(f"Winning amount: ${self.pot}")
         else:
             # Evaluate hands and find winner
             player_hands = [(player, self.evaluate_hand(player)) for player in active_players]
+            for player, (hand_rank, _) in player_hands:
+                print(f"{player.name}'s hand: {[str(card) for card in player.cards]}")
+                print(f"{player.name}'s hand rank: {hand_rank.name}")
+            
             player_hands.sort(key=lambda x: (x[1][0].value, x[1][1]), reverse=True)
             winner = player_hands[0][0]
             winner.stack += self.pot
             winning_hand = player_hands[0][1][0].name.replace('_', ' ').title()
             self.winner_info = f"{winner.name} wins ${self.pot} with {winning_hand}"
-            print('winner_info :', self.winner_info)
+            print(f"Winner at showdown: {winner.name}")
+            print(f"Winning hand: {winning_hand}")
+            print(f"Winning amount: ${self.pot}")
         
         # Set the winner display start time
         self.winner_display_start = pygame.time.get_ticks()
