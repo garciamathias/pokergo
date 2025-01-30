@@ -69,7 +69,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
             pygame.display.flip()
             
             # Control frame rate
-            env.clock.tick(30)  # 30 FPS
+            env.clock.tick(1)  # 30 FPS
     
     # Calculate final rewards based on stack changes
     for i, player in enumerate(env.players):
