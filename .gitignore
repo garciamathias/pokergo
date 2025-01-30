@@ -34,3 +34,5 @@ htmlcov/
 
 __pycache__/
 *.pyc 
+
+saved_models/
