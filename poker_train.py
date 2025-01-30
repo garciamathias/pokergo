@@ -7,6 +7,7 @@ import time
 from poker_agents import PokerAgent
 from poker_game import PokerGame, GamePhase
 import matplotlib.pyplot as plt
+from vizualization import plot_rewards, update_rewards_history
 
 # Hyperparameters
 EPISODES = 400
@@ -15,7 +16,7 @@ ALPHA = 0.001
 GLOBAL_N = 11
 EPS_DECAY = 0.98
 STATE_SIZE = 44
-RENDERING = False
+RENDERING = True
 
 def set_seed(seed=42):
     rd.seed(seed)
@@ -45,10 +46,10 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         action = current_agent.get_action(state, epsilon)
         
         # Take action and get next state
-        next_state = env.step(action)
+        next_state, reward = env.step(action)
         
         # Store experience (we'll calculate reward at the end)
-        current_agent.remember(state, action, 0, next_state, False)
+        current_agent.remember(state, action, reward, next_state, False)
         
         # If all players have folded except one, end the episode
         active_players = sum(1 for p in env.players if p.is_active)
@@ -88,11 +89,17 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
 
 # Main Training Loop
 def main_training_loop(agent_list, episodes, rendering, render_every = 10):
+    # Initialize rewards history
+    rewards_history = {}
+    
     try:
         for episode in range(episodes):
             epsilon = np.clip(0.5 * EPS_DECAY ** episode, 0.01, 0.5)
             
             reward_list = run_episode(agent_list, epsilon, rendering, episode, render_every)
+            
+            # Update rewards history
+            rewards_history = update_rewards_history(rewards_history, reward_list, agent_list)
             
             # Print episode information
             print(f"\nEpisode {episode + 1}/{episodes}")
@@ -106,9 +113,16 @@ def main_training_loop(agent_list, episodes, rendering, render_every = 10):
                 for agent in agent_list:
                     torch.save(agent.model.state_dict(), f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
                 print("Models saved successfully!")
+                
+                # Plot and save rewards visualization
+                plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
+                print("Rewards plot saved successfully!")
 
     except KeyboardInterrupt:
         print("\nTraining interrupted by user")
+        # Plot rewards even if training was interrupted
+        plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
+        print("Rewards plot saved successfully!")
     finally:
         if rendering:
             pygame.quit()

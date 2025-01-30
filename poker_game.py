@@ -1,5 +1,5 @@
 import pygame
-import random
+import random as rd
 from enum import Enum
 from typing import List, Dict, Optional, Tuple
 import pygame.font
@@ -166,8 +166,8 @@ class PokerGame:
         self.community_cards: List[Card] = []
         self.current_phase = GamePhase.PREFLOP
         self.players = self._initialize_players()
-        self.button_position = 0
-        self.current_player_idx = 0
+        self.button_position = rd.randint(0, self.num_players - 1)
+        self.current_player_idx = (self.button_position + 1)
         self.current_bet = self.big_blind
         self.last_raiser = None
         self.round_ended = False
@@ -192,6 +192,9 @@ class PokerGame:
         self.start_new_hand()
 
     def reset(self):
+        """
+        Reset the game state for a new hand. Almost reinitalizes the game.
+        """
         self.start_new_hand()
 
     def start_new_hand(self):
@@ -199,6 +202,9 @@ class PokerGame:
         Reset game state and start a new hand.
         Posts blinds, deals cards, and sets up the initial betting round.
         """
+        # Move button position one spot clockwise
+        self.button_position = (self.button_position + 1) % self.num_players
+        
         # Reset game state
         self.pot = 0
         self.community_cards = []
@@ -411,6 +417,8 @@ class PokerGame:
                 self.advance_phase()
         else:
             self._next_player()
+        
+        return action
 
     def handle_showdown(self):
         """
@@ -465,7 +473,7 @@ class PokerGame:
         suits = ['♠', '♥', '♦', '♣']
         values = range(2, 15)  # 2-14 (Ace is 14)
         deck = [Card(suit, value) for suit in suits for value in values]
-        random.shuffle(deck)
+        rd.shuffle(deck)
         return deck
     
     def _initialize_players(self) -> List[Player]:
@@ -838,8 +846,16 @@ class PokerGame:
         return state
 
     def step(self, action):
-        self.process_action(self.players[self.current_player_idx], action)
-        return self.get_state()
+        reward = 0
+        action = self.process_action(self.players[self.current_player_idx], action)
+        if action == PlayerAction.FOLD:
+            reward = -1
+        elif action == PlayerAction.CALL:
+            reward = 1
+        elif action == PlayerAction.RAISE:
+            reward = 2
+
+        return self.get_state(), reward
 
     def manual_run(self):
         """
@@ -853,6 +869,11 @@ class PokerGame:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                    if event.key == pygame.K_SPACE:
+                        self.start_new_hand()
                 
                 self.handle_input(event)
                 
@@ -865,7 +886,7 @@ class PokerGame:
             current_player = self.players[self.current_player_idx]
             if not current_player.is_human and current_player.is_active:
                 # Simple AI decision (can be improved)
-                action = random.choice([PlayerAction.CALL, PlayerAction.FOLD])
+                action = rd.choice([PlayerAction.CALL, PlayerAction.FOLD])
                 self.process_action(current_player, action)
             
             self._draw()

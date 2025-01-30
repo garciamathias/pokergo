@@ -28,6 +28,7 @@ agent = PokerAgent(
     learning_rate=ALPHA,
     load_model=False,
 )
+agent.name = "player_1"
 for _ in range(6):
     agent_list.append(agent)
 
