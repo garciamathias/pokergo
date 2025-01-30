@@ -170,9 +170,9 @@ class PokerGame:
         self.current_player_idx = (self.button_position + 1) % self.num_players
         self.current_bet = self.big_blind
         self.last_raiser = None
-        self.round_ended = False
         self.clock = pygame.time.Clock()
-        self.round_number = 0  # Initialize round number
+        self.round_number = 0
+        self.number_raise_this_round = 0
         
         # Initialize UI elements
         self.action_buttons = self._create_action_buttons()
@@ -203,6 +203,7 @@ class PokerGame:
         self.winner_info = None
         self.winner_display_start = 0
         self.round_number = 0
+        self.number_raise_this_round = 0
         self.action_history = []
         
         # Reset player states
@@ -235,7 +236,6 @@ class PokerGame:
         
         # Reset betting state
         self.last_raiser = None
-        self.round_ended = False
         
         return self.get_state()
 
@@ -253,7 +253,6 @@ class PokerGame:
         self.current_phase = GamePhase.PREFLOP
         self.current_bet = self.big_blind
         self.last_raiser = None
-        self.round_ended = False
         self.round_number = 0  # Reset round number for new hand
         
         # Reset player states
@@ -391,6 +390,7 @@ class PokerGame:
         
         # Increment round number when moving to a new phase
         self.round_number += 1
+        self.number_raise_this_round = 0
         
         # Deal community cards for the new phase
         self.deal_community_cards()
@@ -784,6 +784,10 @@ class PokerGame:
         # Disable raise if not enough chips for minimum raise
         min_raise = max(self.current_bet * 2, self.big_blind * 2)
         if current_player.stack + current_player.current_bet < min_raise:
+            self.action_buttons[PlayerAction.RAISE].enabled = False
+        
+        # Also if the player has already raised 3 times, disable raise
+        if self.number_raise_this_round >= 4:
             self.action_buttons[PlayerAction.RAISE].enabled = False
     
     def get_state(self):

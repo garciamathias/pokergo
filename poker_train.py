@@ -73,7 +73,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
             break
             
         # Handle rendering if enabled
-        if rendering and (episode % render_every == 0):
+        if rendering :
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
@@ -84,8 +84,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
     
     # Calculate final rewards based on stack changes
     final_stacks = [player.stack for player in env.players]
-    stack_changes = [(final - initial) / env.big_blind 
-                    for final, initial in zip(final_stacks, initial_stacks)]
+    stack_changes = [(final - initial) / env.big_blind for final, initial in zip(final_stacks, initial_stacks)]
     
     # Combine stack changes with cumulative rewards
     final_rewards = [r + s for r, s in zip(cumulative_rewards, stack_changes)]
@@ -107,7 +106,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
     return final_rewards, winning_list
 
 # Main Training Loop
-def main_training_loop(agent_list, episodes, rendering, render_every = 10):
+def main_training_loop(agent_list, episodes, rendering, render_every):
     # Initialize histories
     rewards_history = {}
     winning_history = {}
@@ -123,8 +122,8 @@ def main_training_loop(agent_list, episodes, rendering, render_every = 10):
             winning_history = update_winning_history(winning_history, winning_list, agent_list)
             
             # Print episode information
-            print(f"\nEpisode {episode + 1}/{episodes}")
-            print(f"Epsilon: {epsilon:.3f}")
+            print(f"\nEpisode [{episode + 1}/{episodes}]")
+            print(f"Randomness: {epsilon*100:.3f}%")
             for i, reward in enumerate(reward_list):
                 print(f"Agent {i+1} reward: {reward:.2f}")
 
