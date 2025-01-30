@@ -789,6 +789,10 @@ class PokerGame:
         # Also if the player has already raised 3 times, disable raise
         if self.number_raise_this_round >= 4:
             self.action_buttons[PlayerAction.RAISE].enabled = False
+
+        # If Check is enabled, disable fold
+        if self.action_buttons[PlayerAction.CHECK].enabled:
+            self.action_buttons[PlayerAction.FOLD].enabled = False
     
     def get_state(self):
         """
