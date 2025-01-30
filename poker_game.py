@@ -119,16 +119,16 @@ class Player:
         Initialize a player with name, starting stack, and table position.
         Args:
             name (str): Player's name
-            stack (int): Starting chip stack
+            stack (int): Starting chip stack (in blinds)
             position (int): Table position (0-5)
         """
         self.name = name
-        self.stack = stack
+        self.stack = stack  # Maintenant exprimé en blindes
         self.position = position
         self.cards: List[Card] = []
         self.is_active = True
-        self.current_bet = 0
-        self.is_human = True  # Make all players human
+        self.current_bet = 0  # Maintenant exprimé en blindes
+        self.is_human = True
         self.has_acted = False
         positions = [
             (600, 700),  # Bottom (Player 1)
@@ -144,13 +144,13 @@ class PokerGame:
     """
     Main game class that manages the poker game state and logic.
     """
-    def __init__(self, num_players: int = 6, small_blind: int = 1, big_blind: int = 2):
+    def __init__(self, num_players: int = 6, small_blind: int = 0.5, big_blind: int = 1):
         """
         Initialize the poker game with players and blinds.
         Args:
             num_players (int): Number of players (default: 6)
-            small_blind (int): Small blind amount (default: 1)
-            big_blind (int): Big blind amount (default: 2)
+            small_blind (int): Small blind amount (default: 0.5 BB)
+            big_blind (int): Big blind amount (default: 1 BB)
         """
         pygame.init()
         pygame.font.init()
@@ -160,8 +160,8 @@ class PokerGame:
         pygame.display.set_caption("6-Max Poker")
         self.font = pygame.font.SysFont('Arial', 24)
         self.num_players = num_players
-        self.small_blind = small_blind
-        self.big_blind = big_blind
+        self.small_blind = small_blind  # Maintenant 0.5 BB
+        self.big_blind = big_blind      # Maintenant 1 BB
         self.pot = 0
         self.deck: List[Card] = self._create_deck()
         self.community_cards: List[Card] = []
@@ -213,7 +213,7 @@ class PokerGame:
             player.current_bet = 0
             player.is_active = True
             player.has_acted = False
-            player.stack = 200 * self.big_blind  # Reset to starting stack
+            player.stack = 75  # 75 BB de stack de départ
         
         # Reset button and blinds
         self.button_position = (self.button_position + 1) % self.num_players
@@ -667,7 +667,7 @@ class PokerGame:
             List[Player]: List of initialized player objects
         """
         players = []
-        starting_stack = 200 * self.big_blind # starting stack is 400$
+        starting_stack = 75  # 75 BB de stack de départ
         for i in range(self.num_players):
             player = Player(f"Player {i+1}", starting_stack, i)
             players.append(player)
@@ -736,7 +736,7 @@ class PokerGame:
         
         # Draw player info with 2 decimal places
         name_color = (0, 255, 255) if player.position == self.current_player_idx else (255, 255, 255)
-        name_text = self.font.render(f"{player.name} (${player.stack:.2f})", True, name_color)
+        name_text = self.font.render(f"{player.name} ({player.stack:.1f} BB)", True, name_color)
         self.screen.blit(name_text, (player.x - 50, player.y - 40))
         
         # Draw player cards
@@ -751,7 +751,7 @@ class PokerGame:
         
         # Draw current bet with 2 decimal places
         if player.current_bet > 0:
-            bet_text = self.font.render(f"Bet: ${player.current_bet:.2f}", True, (255, 255, 0))
+            bet_text = self.font.render(f"Bet: {player.current_bet:.1f} BB", True, (255, 255, 0))
             self.screen.blit(bet_text, (player.x - 30, player.y + 80))
     
     def _draw(self):
@@ -771,7 +771,7 @@ class PokerGame:
             self._draw_card(card, 400 + i * 60, 350)
         
         # Draw pot with 2 decimal places
-        pot_text = self.font.render(f"Pot: ${self.pot:.2f}", True, (255, 255, 255))
+        pot_text = self.font.render(f"Pot: {self.pot:.1f} BB", True, (255, 255, 255))
         self.screen.blit(pot_text, (550, 300))
         
         # Draw players
@@ -801,13 +801,13 @@ class PokerGame:
         
         # Draw bet slider with min and max values
         current_player = self.players[self.current_player_idx]
-        min_raise = max(self.current_bet * 2, self.big_blind * 2)
+        min_raise = max(self.current_bet * 2, 2)  # Minimum 2 BB
         max_raise = current_player.stack + current_player.current_bet
         
         pygame.draw.rect(self.screen, (200, 200, 200), self.bet_slider)
-        bet_text = self.font.render(f"Bet: ${int(self.current_bet_amount)}", True, (255, 255, 255))
-        min_text = self.font.render(f"Min: ${min_raise}", True, (255, 255, 255))
-        max_text = self.font.render(f"Max: ${max_raise}", True, (255, 255, 255))
+        bet_text = self.font.render(f"Bet: {self.current_bet_amount:.1f} BB", True, (255, 255, 255))
+        min_text = self.font.render(f"Min: {min_raise:.1f} BB", True, (255, 255, 255))
+        max_text = self.font.render(f"Max: {max_raise:.1f} BB", True, (255, 255, 255))
         
         self.screen.blit(bet_text, (50, self.SCREEN_HEIGHT - 75))
         self.screen.blit(min_text, (self.bet_slider.x, self.SCREEN_HEIGHT - 125))
@@ -1008,7 +1008,7 @@ class PokerGame:
         state.append(self.current_bet / self.big_blind)
 
         # 6. Money left (stack sizes normalized by initial stack)
-        initial_stack = 200 * self.big_blind
+        initial_stack = 75 * self.big_blind
         for player in self.players:
             state.append(player.stack / initial_stack)
 
