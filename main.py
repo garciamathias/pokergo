@@ -6,7 +6,6 @@ set_seed(42)
 
 agent_list = []
 
-
 # Create the Q-learning agents
 for i in range(6):
     agent = PokerAgent(
@@ -15,6 +14,7 @@ for i in range(6):
         gamma=GAMMA,
         learning_rate=ALPHA,
         load_model=False,
+        load_path=f"saved_models/poker_agent_player_{i+1}.pth"
     )
     agent.name = f"player_{i+1}"
     agent_list.append(agent)
@@ -28,11 +28,10 @@ agent = PokerAgent(
     learning_rate=ALPHA,
     load_model=False,
 )
-agent.name = "player_1"
+agent.name = "all_players"
 for _ in range(6):
     agent_list.append(agent)
 """
-    
 
 # Start the training loop
 main_training_loop(agent_list, episodes=EPISODES, rendering=RENDERING, render_every=1)

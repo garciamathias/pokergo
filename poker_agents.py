@@ -11,7 +11,7 @@ device = torch.device("mps") if torch.backends.mps.is_available() else torch.dev
 device = 'cpu'  # Uncomment to force CPU
 
 class PokerAgent:
-    def __init__(self, state_size, action_sizes, gamma, learning_rate, entropy_coeff=0.01, value_loss_coeff=0.5, load_model=False):
+    def __init__(self, state_size, action_sizes, gamma, learning_rate, entropy_coeff=0.01, value_loss_coeff=0.5, load_model=False, load_path=None):
         self.state_size = state_size
         self.action_sizes = action_sizes
         self.gamma = gamma
@@ -25,10 +25,10 @@ class PokerAgent:
 
         self.load_model = load_model
         if self.load_model:
-            self.load()
+            self.load(load_path)
 
-    def load(self):
-        self.model.load_state_dict(torch.load('saved_models/poker_agent.pth'))
+    def load(self, load_path):
+        self.model.load_state_dict(torch.load(load_path))
 
     def get_action(self, state, epsilon, valid_actions=None):
         """

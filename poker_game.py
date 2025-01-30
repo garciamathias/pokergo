@@ -891,67 +891,80 @@ class PokerGame:
         """
         Process a player's action and update game state.
         
-        The reward system is structured as follows:
-        - Invalid actions: -10 (actions that are not allowed in current state)
-        - Invalid raise amount: -5 (raises below minimum or insufficient chips)
+        Reward system:
+        - Invalid actions: -40 (heavily penalize invalid actions)
+        - Fold: Small negative reward (-1) to discourage unnecessary folding
+        - Check/Call: Neutral reward (0)
+        - Raise: Small positive reward (1) to encourage aggression
+        - Winning pot: Large positive reward (pot size)
+        - Losing hand: Negative reward (-amount_lost)
         
-        The method also handles:
-        - Converting invalid raises to calls
-        - Ensuring minimum raise requirements
-        - Managing chip movements between player stacks and pot
-        - Updating player states and bet amounts
-        
-        Args:
-            action: PlayerAction enum value representing the chosen action
-            
         Returns:
             tuple: (next_state, reward) where next_state is the new game state 
             and reward is the numerical feedback for the action
         """
         current_player = self.players[self.current_player_idx]
+        initial_stack = current_player.stack
         reward = 0
 
-        
+        # Penalize invalid actions
         if not self.action_buttons[action].enabled:
             reward = -40
             valid_actions = [a for a in PlayerAction if self.action_buttons[a].enabled]
             action = rd.choice(valid_actions)
-
+        
+        # Process the action
         if action == PlayerAction.RAISE:
-            # To implement :
-            # self.current_bet_amount = Raise_Calculator_Model(self.get_state())
-            
-            # Calculate minimum and maximum raise amounts
             min_raise = max(self.current_bet * 2, self.big_blind * 2)
             max_raise = current_player.stack + current_player.current_bet
             
-            # Ensure current_bet_amount is within valid range
-            self.current_bet_amount = max(min_raise, self.current_bet_amount)
-            self.current_bet_amount = min(max_raise, self.current_bet_amount)
-            
-            # Calculate actual raise amount
+            self.current_bet_amount = max(min_raise, min(max_raise, self.current_bet_amount))
             raise_amount = self.current_bet_amount - current_player.current_bet
             
-            if raise_amount <= current_player.stack:  # Player has enough chips
-                # Process the raise
+            if raise_amount <= current_player.stack:
                 current_player.stack -= raise_amount
                 current_player.current_bet += raise_amount
                 self.current_bet = current_player.current_bet
                 self.pot += raise_amount
+                reward = 1  # Small positive reward for raising
             else:
                 action = PlayerAction.CALL
-
+        
         if action == PlayerAction.CALL:
             call_amount = self.current_bet - current_player.current_bet
             call_amount = min(call_amount, current_player.stack)
             current_player.stack -= call_amount
             current_player.current_bet += call_amount
             self.pot += call_amount
-
+            reward = 0  # Neutral reward for calling
+        
         elif action == PlayerAction.FOLD:
             current_player.is_active = False
+            reward = -1  # Small negative reward for folding
+        
+        elif action == PlayerAction.CHECK:
+            reward = 0  # Neutral reward for checking
 
+        # Process the action in the game state
         self.process_action(current_player, action)
+        
+        # Add showdown rewards
+        if self.current_phase == GamePhase.SHOWDOWN:
+            active_players = [p for p in self.players if p.is_active]
+            if len(active_players) == 1 and active_players[0] == current_player:
+                # Won by making others fold
+                reward = self.pot
+            else:
+                # Showdown reached - evaluate hands
+                player_hands = [(p, self.evaluate_hand(p)) for p in active_players]
+                player_hands.sort(key=lambda x: (x[1][0].value, x[1][1]), reverse=True)
+                if player_hands[0][0] == current_player:
+                    reward = self.pot  # Won at showdown
+                else:
+                    reward = -(initial_stack - current_player.stack)  # Lost at showdown
+        
+        # Scale rewards based on big blind for consistency
+        reward = reward / self.big_blind
         
         return self.get_state(), reward
 
