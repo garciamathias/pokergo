@@ -44,7 +44,7 @@ class PokerAgent:
             action_probs_grouped, _ = self.model(state_tensor)
         self.model.train()
 
-        # Since we only have one action group (check, call, fold, raise)
+        # Since we only have one action group
         action_probs = action_probs_grouped[0]
 
         # Create action map
@@ -52,7 +52,8 @@ class PokerAgent:
             0: PlayerAction.CHECK,
             1: PlayerAction.CALL,
             2: PlayerAction.FOLD,
-            3: PlayerAction.RAISE
+            3: PlayerAction.RAISE,
+            4: PlayerAction.ALL_IN  # Added ALL_IN action
         }
         
         # Create reverse map for masking
@@ -70,13 +71,12 @@ class PokerAgent:
             # Renormalize probabilities
             action_probs = action_probs / (action_probs.sum() + 1e-10)
 
-        
         if random.random() < epsilon:  # Exploration
             if valid_actions:
-                action = action_map[random.choice([reverse_map[a] for a in valid_actions])]
+                action = random.choice(valid_actions)
             else:
                 action = action_map[random.randint(0, action_probs.size(1) - 1)]
-        else:
+        else:  # Exploitation
             if valid_actions:
                 valid_indices = [reverse_map[a] for a in valid_actions]
                 valid_probs = action_probs[0, valid_indices]
@@ -92,7 +92,8 @@ class PokerAgent:
             PlayerAction.CHECK: 0,
             PlayerAction.CALL: 1,
             PlayerAction.FOLD: 2,
-            PlayerAction.RAISE: 3
+            PlayerAction.RAISE: 3,
+            PlayerAction.ALL_IN: 4  # Added ALL_IN action
         }
         numerical_action = action_map[action]
         self.memory.append((state, numerical_action, reward, next_state, done))

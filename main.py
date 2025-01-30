@@ -10,7 +10,7 @@ agent_list = []
 for i in range(6):
     agent = PokerAgent(
         state_size=STATE_SIZE,
-        action_sizes=[4], # [check, call, fold, raise]
+        action_sizes=[5],  # Updated to 5 actions [check, call, fold, raise, all-in]
         gamma=GAMMA,
         learning_rate=ALPHA,
         load_model=False,

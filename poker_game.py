@@ -245,9 +245,6 @@ class PokerGame:
         Reset game state and start a new hand.
         Posts blinds, deals cards, and sets up the initial betting round.
         """
-        # Move button position one spot clockwise
-        self.button_position = (self.button_position + 1) % self.num_players
-        
         # Reset game state
         self.pot = 0
         self.community_cards = []
@@ -256,29 +253,84 @@ class PokerGame:
         self.last_raiser = None
         self.round_number = 0  # Reset round number for new hand
         
-        # Reset player states
+        # Reset player states and check for bankrupted players
+        active_players_count = 0
         for player in self.players:
             player.cards = []
             player.current_bet = 0
-            player.is_active = True
             player.has_acted = False
+            # Check if player has enough chips for big blind
+            if player.stack >= self.big_blind:
+                player.is_active = True
+                active_players_count += 1
+            else:
+                player.is_active = False
+                print(f"{player.name} is out of the game (insufficient funds: ${player.stack})")
+        
+        # Check if we have enough players to continue
+        if active_players_count < 2:
+            print(f"Not enough players with sufficient funds ({active_players_count}). Need at least 2 players.")
+            self.reset()
+            return
+        
+        # Move button position to next active player
+        original_button = self.button_position
+        self.button_position = (self.button_position + 1) % self.num_players
+        while not self.players[self.button_position].is_active:
+            self.button_position = (self.button_position + 1) % self.num_players
+            if self.button_position == original_button:  # We've gone full circle
+                # Find first active player
+                for i in range(self.num_players):
+                    if self.players[i].is_active:
+                        self.button_position = i
+                        break
         
         # Post blinds
         sb_pos = (self.button_position + 1) % self.num_players
         bb_pos = (self.button_position + 2) % self.num_players
         
-        self.players[sb_pos].stack -= self.small_blind
-        self.players[sb_pos].current_bet = self.small_blind
-        self.players[bb_pos].stack -= self.big_blind
-        self.players[bb_pos].current_bet = self.big_blind
+        # Find next active player for small blind if current is inactive
+        original_sb_pos = sb_pos
+        while not self.players[sb_pos].is_active:
+            sb_pos = (sb_pos + 1) % self.num_players
+            if sb_pos == original_sb_pos:  # We've gone full circle
+                print("Error: No active players found for small blind")
+                self.reset()
+                return
+        
+        # Find next active player for big blind
+        bb_pos = (sb_pos + 1) % self.num_players
+        original_bb_pos = bb_pos
+        while not self.players[bb_pos].is_active:
+            bb_pos = (bb_pos + 1) % self.num_players
+            if bb_pos == original_bb_pos:  # We've gone full circle
+                print("Error: No active players found for big blind")
+                self.reset()
+                return
+        
+        # Post blinds if both players can afford them
+        sb_player = self.players[sb_pos]
+        bb_player = self.players[bb_pos]
+        
+        sb_player.stack -= self.small_blind
+        sb_player.current_bet = self.small_blind
+        bb_player.stack -= self.big_blind
+        bb_player.current_bet = self.big_blind
         
         self.pot = self.small_blind + self.big_blind
         
-        # Deal cards
+        # Deal cards only to active players
         self.deal_cards()
         
-        # Set starting player (UTG)
+        # Set starting player (UTG) - first active player after BB
         self.current_player_idx = (bb_pos + 1) % self.num_players
+        original_utg = self.current_player_idx
+        while not self.players[self.current_player_idx].is_active:
+            self.current_player_idx = (self.current_player_idx + 1) % self.num_players
+            if self.current_player_idx == original_utg:  # We've gone full circle
+                print("Error: No active players found after big blind")
+                self.reset()
+                return
 
         # Clear action history at the start of each hand
         self.action_history = []
@@ -366,8 +418,21 @@ class PokerGame:
             bool: True if round is complete, False otherwise
         """
         active_players = [p for p in self.players if p.is_active]
+        
+        # If only one player remains, round is complete
         if len(active_players) == 1:
             return True
+        
+        # If only two players remain and both are all-in, proceed to showdown
+        if len(active_players) == 2:
+            all_in_players = [p for p in active_players if p.stack == 0]
+            if len(all_in_players) == 2:
+                print("Two players remain and both are all-in - proceeding to showdown")
+                # Deal remaining community cards if needed
+                while len(self.community_cards) < 5:
+                    self.community_cards.append(self.deck.pop())
+                self.handle_showdown()
+                return True
         
         # Check if all active players have acted and bets are equal
         all_acted = all(p.has_acted for p in active_players)
@@ -382,6 +447,19 @@ class PokerGame:
         """
         print(f"current_phase {self.current_phase}")
         
+        # Check if all active players are all-in
+        active_players = [p for p in self.players if p.is_active]
+        all_in_players = [p for p in active_players if p.stack == 0]
+        
+        if len(all_in_players) == len(active_players) and len(active_players) > 1:
+            print("All players are all-in - proceeding directly to showdown")
+            # Deal all remaining community cards
+            while len(self.community_cards) < 5:
+                self.community_cards.append(self.deck.pop())
+            self.handle_showdown()
+            return
+        
+        # Normal phase progression
         if self.current_phase == GamePhase.PREFLOP:
             self.current_phase = GamePhase.FLOP
         elif self.current_phase == GamePhase.FLOP:
@@ -414,7 +492,7 @@ class PokerGame:
         """
         # Don't process actions during showdown
         if self.current_phase == GamePhase.SHOWDOWN:
-            return
+            return action
             
         # Debug print for action start
         print(f"\n=== Action by {player.name} ===")
@@ -425,21 +503,20 @@ class PokerGame:
         print(f"Player stack before: ${player.stack}")
         print(f"Player current bet: ${player.current_bet}")
         
-        # Record the action with bet amount if applicable
+        # Record the action
         action_text = f"{player.name}: {action.value}"
         if bet_amount is not None and action == PlayerAction.RAISE:
             action_text += f" ${bet_amount}"
         self.action_history.append(action_text)
-        # Keep only the last 10 actions
         if len(self.action_history) > 10:
             self.action_history.pop(0)
         
+        # Process the action
         if action == PlayerAction.FOLD:
             player.is_active = False
             print(f"{player.name} folds")
             
         elif action == PlayerAction.CHECK:
-            # No action needed for check, just mark player as acted
             player.has_acted = True
             print(f"{player.name} checks")
             
@@ -451,35 +528,27 @@ class PokerGame:
             print(f"{player.name} calls ${call_amount}")
             
         elif action == PlayerAction.RAISE and bet_amount is not None:
-            # Calculate the total amount player needs to put in
             total_to_put_in = bet_amount - player.current_bet
-            # Deduct from player's stack
             player.stack -= total_to_put_in
-            # Update player's current bet and pot
             player.current_bet = bet_amount
             self.current_bet = bet_amount
             self.pot += total_to_put_in
             self.last_raiser = player
-            print(f"{player.name} raises to ${bet_amount} (putting in ${total_to_put_in})")
-            # Reset has_acted for other players when there's a raise
+            print(f"{player.name} raises to ${bet_amount}")
             for p in self.players:
                 if p != player and p.is_active:
                     p.has_acted = False
         
         elif action == PlayerAction.ALL_IN:
-            # Calculer le montant total du tapis
             all_in_amount = player.stack + player.current_bet
-            # Mettre à jour les mises et le pot
             total_to_put_in = player.stack
             player.stack = 0
             player.current_bet = all_in_amount
             self.pot += total_to_put_in
             
-            # Mettre à jour la mise actuelle si c'est la plus grande
             if all_in_amount > self.current_bet:
                 self.current_bet = all_in_amount
                 self.last_raiser = player
-                # Réinitialiser has_acted pour les autres joueurs
                 for p in self.players:
                     if p != player and p.is_active:
                         p.has_acted = False
@@ -488,10 +557,22 @@ class PokerGame:
         
         player.has_acted = True
         
-        # Debug print for post-action state
+        # Debug print post-action state
         print(f"Player stack after: ${player.stack}")
         print(f"New pot: ${self.pot}")
         print(f"Active players: {sum(1 for p in self.players if p.is_active)}")
+        
+        # Check for all-in situations after the action
+        active_players = [p for p in self.players if p.is_active]
+        all_in_players = [p for p in active_players if p.stack == 0]
+        
+        # If all active players are all-in or only one player remains active, go to showdown
+        if (len(all_in_players) == len(active_players) and len(active_players) > 1) or len(active_players) == 1:
+            print("Proceeding to showdown (all players all-in or only one player remains)")
+            while len(self.community_cards) < 5:
+                self.community_cards.append(self.deck.pop())
+            self.handle_showdown()
+            return action
         
         # Check if round is complete and handle next phase
         if self.check_round_completion():
@@ -529,6 +610,10 @@ class PokerGame:
             print(f"Winner by fold: {winner.name}")
             print(f"Winning amount: ${self.pot}")
         else:
+            # Make sure all community cards are dealt for all-in situations
+            while len(self.community_cards) < 5:
+                self.community_cards.append(self.deck.pop())
+            
             # Evaluate hands and find winner
             player_hands = [(player, self.evaluate_hand(player)) for player in active_players]
             for player, (hand_rank, _) in player_hands:
@@ -824,6 +909,16 @@ class PokerGame:
         """
         current_player = self.players[self.current_player_idx]
         
+        # First check if all active players are all-in
+        active_players = [p for p in self.players if p.is_active]
+        all_in_players = [p for p in active_players if p.stack == 0]
+        
+        if len(all_in_players) == len(active_players) and len(active_players) > 1:
+            # Disable all buttons as we should auto-proceed to showdown
+            for button in self.action_buttons.values():
+                button.enabled = False
+            return
+        
         # Enable all buttons by default
         for button in self.action_buttons.values():
             button.enabled = True
@@ -859,6 +954,7 @@ class PokerGame:
         Get the current state of the game for the RL agent.
         Returns a list containing:
         - Cards info (player's cards and community cards)
+        - Current hand rank
         - Bets info (current bets of all players)
         - Position info (relative positions of players)
         - Activity info (which players are still active)
@@ -874,6 +970,7 @@ class PokerGame:
         # Player's cards
         for card in current_player.cards:
             state.append((card.value - 2) / 12)  # Normalize card values
+        
         # Community cards
         flop = [-1] * 3
         turn = [-1]
@@ -887,7 +984,14 @@ class PokerGame:
                 river[0] = (card.value - 2) / 12
         state.extend(flop + turn + river)
 
-        # 2. Round information
+        # 2. Current hand rank (if enough cards are visible)
+        if len(current_player.cards) + len(self.community_cards) >= 5:
+            hand_rank, _ = self.evaluate_hand(current_player)
+            state.append(hand_rank.value / len(HandRank))  # Normalize rank value
+        else:
+            state.append(-1)  # No hand rank available yet
+
+        # 3. Round information
         phase_values = {
             GamePhase.PREFLOP: 0,
             GamePhase.FLOP: 0.25,
@@ -897,33 +1001,33 @@ class PokerGame:
         }
         state.append(phase_values[self.current_phase])
 
-        # 3. Round number
+        # 4. Round number
         state.append(self.round_number)
 
-        # 4. Current bet normalized by big blind
+        # 5. Current bet normalized by big blind
         state.append(self.current_bet / self.big_blind)
 
-         # 5. Money left (stack sizes normalized by initial stack)
+        # 6. Money left (stack sizes normalized by initial stack)
         initial_stack = 200 * self.big_blind
         for player in self.players:
             state.append(player.stack / initial_stack)
 
-        # 6. Bets information (normalized by big blind)
+        # 7. Bets information (normalized by big blind)
         for player in self.players:
             state.append(player.current_bet / self.big_blind)
 
-        # 7. Activity information (extreme binary: active/folded)
+        # 8. Activity information (extreme binary: active/folded)
         for player in self.players:
             state.append(1 if player.is_active else -1)
 
-        # 8. Position information (one-hot encoded relative positions)
+        # 9. Position information (one-hot encoded relative positions)
         relative_positions = [0.1] * self.num_players
         for i in range(self.num_players):
             relative_pos = (i - self.current_player_idx) % self.num_players
             relative_positions[relative_pos] = 1
         state.extend(relative_positions)
 
-        # 9. Available actions (extreme binary: available/unavailable)
+        # 10. Available actions (extreme binary: available/unavailable)
         action_availability = []
         for action in PlayerAction:
             if action in self.action_buttons and self.action_buttons[action].enabled:
@@ -932,16 +1036,16 @@ class PokerGame:
                 action_availability.append(-1)
         state.extend(action_availability)
 
-        # 10. Previous actions (last action of each player, encoded)
+        # 11. Previous actions (last action of each player, encoded)
         action_encoding = {
             None: 0,
             PlayerAction.FOLD: 1,
             PlayerAction.CHECK: 2,
             PlayerAction.CALL: 3,
-            PlayerAction.RAISE: 4
+            PlayerAction.RAISE: 4,
+            PlayerAction.ALL_IN: 5  # Added ALL_IN action encoding
         }
-        # Get last action for each player from action history
-        last_actions = [0] * self.num_players  # Default to 0 (beginning of game)
+        last_actions = [0] * self.num_players
         for action_text in reversed(self.action_history[-self.num_players:]):
             if ":" in action_text:
                 player_name, action = action_text.split(":")
