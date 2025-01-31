@@ -78,8 +78,12 @@ class TrainingVisualizer:
         self.ax3.set_title('Action Distribution per Agent')
         self.ax3.grid(True)
         
-        bar_width = 0.25
+        bar_width = 0.15  # Reduced from 0.25
         agent_positions = np.arange(len(self.rewards_data))
+        
+        # Calculate offset to center the group of bars
+        total_width = bar_width * len(self.action_data['Agent 1'].keys())
+        offset = total_width / 2 - bar_width / 2
         
         for action_idx, action_name in enumerate(self.action_data['Agent 1'].keys()):
             action_percentages = []
@@ -91,13 +95,13 @@ class TrainingVisualizer:
                     percentage = 0
                 action_percentages.append(percentage)
             
-            self.ax3.bar(agent_positions + action_idx * bar_width, 
+            self.ax3.bar(agent_positions + action_idx * bar_width - offset,
                         action_percentages,
                         bar_width,
                         label=action_name,
                         color=self.action_colors[action_name])
         
-        self.ax3.set_xticks(agent_positions + bar_width * 2)
+        self.ax3.set_xticks(agent_positions)
         self.ax3.set_xticklabels(self.rewards_data.keys())
         self.ax3.legend()
         self.ax3.set_ylim(0, 100)
