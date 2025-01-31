@@ -131,8 +131,8 @@ class Player:
         self.is_human = True
         self.has_acted = False
         positions = [
-            (600, 700),  # Bottom (Player 1)
-            (200, 300),  # Left (Player 2)
+            (550, 650),  # Bottom (Player 1)
+            (100, 300),  # Left (Player 2)
             (1000, 300)  # Right (Player 3)
         ]
         self.x, self.y = positions[position]
