@@ -56,14 +56,12 @@ class PokerAgent:
         # Create reverse map for masking
         reverse_map = {v: k for k, v in action_map.items()}
 
-        # Get the preferred action before masking
+        # Model's preferred action (before checking validity)
         preferred_action_idx = torch.argmax(action_probs).item()
         preferred_action = action_map[preferred_action_idx]
-        
-        # Check if preferred action is invalid and assign penalty
-        penalty_reward = 0
-        if preferred_action not in valid_actions:
-            penalty_reward = -30  # Penalty for preferring invalid action
+
+        # Check if preferred action is invalid
+        penalty_reward = -30 if preferred_action not in valid_actions else 0
         
         # Create action mask based on valid actions
         if valid_actions:

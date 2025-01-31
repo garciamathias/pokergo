@@ -144,7 +144,7 @@ class PokerGame:
     """
     Main game class that manages the poker game state and logic.
     """
-    def __init__(self, num_players: int = 6, small_blind: int = 0.5, big_blind: int = 1):
+    def __init__(self, num_players: int = 6, small_blind: float = 0.5, big_blind: float = 1):
         """
         Initialize the poker game with players and blinds.
         Args:
@@ -160,8 +160,8 @@ class PokerGame:
         pygame.display.set_caption("6-Max Poker")
         self.font = pygame.font.SysFont('Arial', 24)
         self.num_players = num_players
-        self.small_blind = small_blind  # Maintenant 0.5 BB
-        self.big_blind = big_blind      # Maintenant 1 BB
+        self.small_blind = float(small_blind)  # Maintenant 0.5 BB
+        self.big_blind = float(big_blind)      # Maintenant 1 BB
         self.pot = 0
         self.deck: List[Card] = self._create_deck()
         self.community_cards: List[Card] = []
@@ -210,10 +210,10 @@ class PokerGame:
         # Reset player states
         for player in self.players:
             player.cards = []
-            player.current_bet = 0
+            player.current_bet = 0.0
             player.is_active = True
             player.has_acted = False
-            player.stack = 75  # 75 BB de stack de départ
+            player.stack = 75.0  # 75 BB de stack de départ
         
         # Reset button and blinds
         self.button_position = (self.button_position + 1) % self.num_players
@@ -679,7 +679,7 @@ class PokerGame:
             List[Player]: List of initialized player objects
         """
         players = []
-        starting_stack = 75  # 75 BB de stack de départ
+        starting_stack = 75.0  # 75 BB de stack de départ
         for i in range(self.num_players):
             player = Player(f"Player {i+1}", starting_stack, i)
             players.append(player)
@@ -958,7 +958,7 @@ class PokerGame:
         if self.action_buttons[PlayerAction.CHECK].enabled:
             self.action_buttons[PlayerAction.FOLD].enabled = False
         
-        # All-in toujours disponible si le joueur a des jetons
+        # All-in always available if the player has chips
         self.action_buttons[PlayerAction.ALL_IN].enabled = current_player.stack > 0
     
     def get_state(self):
