@@ -10,12 +10,12 @@ import matplotlib.pyplot as plt
 from vizualization import plot_rewards, update_rewards_history, plot_winning_stats, update_winning_history
 
 # Hyperparameters
-EPISODES = 10000
+EPISODES = 5000
 GAMMA = 0.9985
 ALPHA = 0.003
-EPS_DECAY =  0.0 #0.9998
+EPS_DECAY =  0.9998
 STATE_SIZE = 46
-RENDERING = True
+RENDERING = False
 FPS = 1
 
 def set_seed(seed=42):
@@ -55,10 +55,10 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         valid_actions = [a for a in PlayerAction if env.action_buttons[a].enabled]
         
         # Get action from agent
-        action = current_agent.get_action(state, epsilon, valid_actions)
+        action, penalty_reward = current_agent.get_action(state, epsilon, valid_actions)
         
         # Take action and get next state and reward
-        next_state, reward = env.step(action)
+        next_state, reward = env.step(action, penalty_reward)
         
         # Update cumulative rewards
         cumulative_rewards[env.current_player_idx] += reward

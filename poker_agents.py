@@ -11,15 +11,15 @@ device = torch.device("mps") if torch.backends.mps.is_available() else torch.dev
 device = 'cpu'  # Uncomment to force CPU
 
 class PokerAgent:
-    def __init__(self, state_size, action_sizes, gamma, learning_rate, entropy_coeff=0.01, value_loss_coeff=0.5, load_model=False, load_path=None):
+    def __init__(self, state_size, action_size, gamma, learning_rate, entropy_coeff=0.01, value_loss_coeff=0.5, load_model=False, load_path=None):
         self.state_size = state_size
-        self.action_sizes = action_sizes
+        self.action_size = action_size
         self.gamma = gamma
         self.learning_rate = learning_rate
         self.entropy_coeff = entropy_coeff
         self.value_loss_coeff = value_loss_coeff
 
-        self.model = ActorCriticModel(state_size, action_sizes).to(device)
+        self.model = ActorCriticModel(state_size, action_size).to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
         self.memory = deque(maxlen=10000)  # Experience replay buffer
 
@@ -41,11 +41,8 @@ class PokerAgent:
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
         self.model.eval()
         with torch.no_grad():
-            action_probs_grouped, _ = self.model(state_tensor)
+            action_probs, _ = self.model(state_tensor)
         self.model.train()
-
-        # Since we only have one action group
-        action_probs = action_probs_grouped[0]
 
         # Create action map
         action_map = {
@@ -53,11 +50,20 @@ class PokerAgent:
             1: PlayerAction.CALL,
             2: PlayerAction.FOLD,
             3: PlayerAction.RAISE,
-            4: PlayerAction.ALL_IN  # Added ALL_IN action
+            4: PlayerAction.ALL_IN
         }
         
         # Create reverse map for masking
         reverse_map = {v: k for k, v in action_map.items()}
+
+        # Get the preferred action before masking
+        preferred_action_idx = torch.argmax(action_probs).item()
+        preferred_action = action_map[preferred_action_idx]
+        
+        # Check if preferred action is invalid and assign penalty
+        penalty_reward = 0
+        if preferred_action not in valid_actions:
+            penalty_reward = -30  # Penalty for preferring invalid action
         
         # Create action mask based on valid actions
         if valid_actions:
@@ -72,19 +78,13 @@ class PokerAgent:
             action_probs = action_probs / (action_probs.sum() + 1e-10)
 
         if random.random() < epsilon:  # Exploration
-            if valid_actions:
-                action = random.choice(valid_actions)
-            else:
-                action = action_map[random.randint(0, action_probs.size(1) - 1)]
-        else:  # Exploitation
-            if valid_actions:
-                valid_indices = [reverse_map[a] for a in valid_actions]
-                valid_probs = action_probs[0, valid_indices]
-                action = action_map[valid_indices[torch.argmax(valid_probs).item()]]
-            else:
-                action = action_map[torch.argmax(action_probs, dim=1).item()]
+            action = random.choice(valid_actions)
+        else: # Exploitation
+            valid_indices = [reverse_map[a] for a in valid_actions]
+            valid_probs = action_probs[0, valid_indices]
+            action = action_map[valid_indices[torch.argmax(valid_probs).item()]]
                 
-        return action
+        return action, penalty_reward
 
     def remember(self, state, action, reward, next_state, done):
         # Convert PlayerAction enum to numerical action for training
@@ -93,7 +93,7 @@ class PokerAgent:
             PlayerAction.CALL: 1,
             PlayerAction.FOLD: 2,
             PlayerAction.RAISE: 3,
-            PlayerAction.ALL_IN: 4  # Added ALL_IN action
+            PlayerAction.ALL_IN: 4
         }
         numerical_action = action_map[action]
         self.memory.append((state, numerical_action, reward, next_state, done))

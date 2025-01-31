@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class ActorCriticModel(nn.Module):
-    def __init__(self, state_size, action_sizes):
+    def __init__(self, state_size, action_size):
         super(ActorCriticModel, self).__init__()
 
         self.shared_layers = nn.Sequential(
@@ -20,7 +20,7 @@ class ActorCriticModel(nn.Module):
         self.actor_layers = nn.Sequential(
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, sum(action_sizes)),
+            nn.Linear(128, action_size),
         )
 
         self.critic_layers = nn.Sequential(
@@ -29,8 +29,7 @@ class ActorCriticModel(nn.Module):
             nn.Linear(128, 1),
         )
 
-        # Action sizes to split the actor output
-        self.action_sizes = action_sizes
+        self.action_size = action_size
 
         # Initialize weights
         self.apply(self._init_weights)
@@ -45,10 +44,9 @@ class ActorCriticModel(nn.Module):
 
         # Actor: Predict action probabilities for all actions
         action_logits = self.actor_layers(shared_features)
-        action_logits_grouped = torch.split(action_logits, self.action_sizes, dim=1)
-        action_probs_grouped = [F.softmax(logits, dim=1) for logits in action_logits_grouped]
+        action_probs = F.softmax(action_logits, dim=1)
 
         # Critic: Predict state value
         state_value = self.critic_layers(shared_features).squeeze(-1)
 
-        return action_probs_grouped, state_value
+        return action_probs, state_value

@@ -1059,7 +1059,7 @@ class PokerGame:
 
         return state
 
-    def step(self, action):
+    def step(self, action, penalty_reward):
         """
         Process a player's action and update game state.
         
@@ -1077,7 +1077,9 @@ class PokerGame:
         """
         current_player = self.players[self.current_player_idx]
         initial_stack = current_player.stack
-        reward = 0
+
+        # Initialize reward as penalty reward (penalty_reward is 0 if action is valid, -10 if invalid)
+        reward = penalty_reward
 
         # Penalize invalid actions
         if not self.action_buttons[action].enabled:
