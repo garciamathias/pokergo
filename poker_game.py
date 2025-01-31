@@ -498,20 +498,19 @@ class PokerGame:
         print(f"\n=== Action by {player.name} ===")
         print(f"Action: {action.value}")
         print(f"Current phase: {self.current_phase}")
-        print(f"Current pot: ${self.pot}")
-        print(f"Current bet: ${self.current_bet}")
-        print(f"Player stack before: ${player.stack}")
-        print(f"Player current bet: ${player.current_bet}")
+        print(f"Current pot: {self.pot:.1f} BB")
+        print(f"Current bet: {self.current_bet:.1f} BB")
+        print(f"Player stack before: {player.stack:.1f} BB")
+        print(f"Player current bet: {player.current_bet:.1f} BB")
         
         # Record the action
         action_text = f"{player.name}: {action.value}"
         if bet_amount is not None and action == PlayerAction.RAISE:
-            action_text += f" ${bet_amount}"
+            action_text += f" {bet_amount:.1f} BB"
         self.action_history.append(action_text)
         if len(self.action_history) > 10:
             self.action_history.pop(0)            
 
-        
         # Process the action
         if action == PlayerAction.FOLD:
             player.is_active = False
@@ -523,19 +522,27 @@ class PokerGame:
             
         elif action == PlayerAction.CALL:
             call_amount = self.current_bet - player.current_bet
+            call_amount = min(call_amount, player.stack)  # Can't call for more than stack
             player.stack -= call_amount
-            player.current_bet = self.current_bet
+            player.current_bet += call_amount
             self.pot += call_amount
-            print(f"{player.name} calls ${call_amount}")
+            print(f"{player.name} calls {call_amount:.1f} BB")
             
         elif action == PlayerAction.RAISE and bet_amount is not None:
-            total_to_put_in = bet_amount - player.current_bet
-            player.stack -= total_to_put_in
+            # Calculate raise amount based on current bet and player's stack
+            min_raise = max(self.current_bet * 2, self.big_blind * 2)
+            max_raise = player.stack + player.current_bet
+            bet_amount = max(min_raise, min(max_raise, bet_amount))
+            
+            raise_amount = bet_amount - player.current_bet
+            player.stack -= raise_amount
             player.current_bet = bet_amount
             self.current_bet = bet_amount
-            self.pot += total_to_put_in
+            self.pot += raise_amount
             self.last_raiser = player
-            print(f"{player.name} raises to ${bet_amount}")
+            print(f"{player.name} raises to {bet_amount:.1f} BB")
+            
+            # Reset other players' acted status
             for p in self.players:
                 if p != player and p.is_active:
                     p.has_acted = False
@@ -543,27 +550,28 @@ class PokerGame:
             self.number_raise_this_round += 1
         
         elif action == PlayerAction.ALL_IN:
-            all_in_amount = player.stack + player.current_bet
-            total_to_put_in = player.stack
+            all_in_amount = player.stack
+            player.current_bet += all_in_amount
+            self.pot += all_in_amount
             player.stack = 0
-            player.current_bet = all_in_amount
-            self.pot += total_to_put_in
             
-            if all_in_amount > self.current_bet:
-                self.number_raise_this_round += 1
-                self.current_bet = all_in_amount
+            if player.current_bet > self.current_bet:
+                self.number_raise_this_round += 1 # This is a raise
+                self.current_bet = player.current_bet
                 self.last_raiser = player
+                
+                # Reset other players' acted status
                 for p in self.players:
                     if p != player and p.is_active:
                         p.has_acted = False
             
-            print(f"{player.name} fait tapis avec ${all_in_amount}")
+            print(f"{player.name} goes all-in with {all_in_amount:.1f} BB")
         
         player.has_acted = True
         
         # Debug print post-action state
-        print(f"Player stack after: ${player.stack}")
-        print(f"New pot: ${self.pot}")
+        print(f"Player stack after: {player.stack:.1f} BB")
+        print(f"New pot: {self.pot:.1f} BB")
         print(f"Active players: {sum(1 for p in self.players if p.is_active)}")
         
         # Check for all-in situations after the action
@@ -1082,46 +1090,26 @@ class PokerGame:
         current_player = self.players[self.current_player_idx]
         initial_stack = current_player.stack
 
-        # Initialize reward as penalty reward (penalty_reward is 0 if action is valid, -10 if invalid)
+        # Initialize reward as penalty reward (penalty_reward is 0 if action is valid, -40 if invalid)
         reward = penalty_reward
 
-        # Penalize invalid actions
+        # Penalize invalid actions and choose a valid one instead
         if not self.action_buttons[action].enabled:
             reward = -40
             valid_actions = [a for a in PlayerAction if self.action_buttons[a].enabled]
             action = rd.choice(valid_actions)
         
-        # Process the action
+        # Process the action and get base reward
         if action == PlayerAction.RAISE:
-            min_raise = max(self.current_bet * 2, self.big_blind * 2)
-            max_raise = current_player.stack + current_player.current_bet
-            
-            self.current_bet_amount = max(min_raise, min(max_raise, self.current_bet_amount))
-            raise_amount = self.current_bet_amount - current_player.current_bet
-            
-            if raise_amount <= current_player.stack:
-                current_player.stack -= raise_amount
-                current_player.current_bet += raise_amount
-                self.current_bet = current_player.current_bet
-                self.pot += raise_amount
-                reward = 1  # Small positive reward for raising
-            else:
-                action = PlayerAction.CALL
-        
-        if action == PlayerAction.CALL:
-            call_amount = self.current_bet - current_player.current_bet
-            call_amount = min(call_amount, current_player.stack)
-            current_player.stack -= call_amount
-            current_player.current_bet += call_amount
-            self.pot += call_amount
+            reward = 1  # Small positive reward for raising
+        elif action == PlayerAction.CALL:
             reward = 0  # Neutral reward for calling
-        
         elif action == PlayerAction.FOLD:
-            current_player.is_active = False
             reward = -1  # Small negative reward for folding
-        
         elif action == PlayerAction.CHECK:
             reward = 0  # Neutral reward for checking
+        elif action == PlayerAction.ALL_IN:
+            reward = 2  # Slightly higher reward for all-in to encourage decisive play
 
         # Process the action in the game state
         self.process_action(current_player, action)
