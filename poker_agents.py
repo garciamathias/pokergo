@@ -112,8 +112,8 @@ class PokerAgent:
         dones = torch.FloatTensor(dones).to(device)
 
         # Get current policy and value predictions
-        action_probs_grouped, state_values = self.model(states)
-        action_probs = action_probs_grouped[0]  # We only have one action group
+        action_probs, state_values = self.model(states)
+        state_values = state_values.squeeze(-1)
 
         # Compute next state values
         with torch.no_grad():
@@ -122,14 +122,14 @@ class PokerAgent:
 
         # Compute TD targets
         td_targets = rewards + self.gamma * next_state_values * (1 - dones)
-        advantages = td_targets - state_values.squeeze(-1)
+        advantages = td_targets - state_values
 
         # Policy loss
-        selected_action_probs = action_probs[range(len(actions)), actions]
+        selected_action_probs = action_probs[torch.arange(len(actions)), actions]
         policy_loss = -torch.mean(torch.log(selected_action_probs + 1e-10) * advantages.detach())
 
         # Value loss
-        value_loss = torch.mean((state_values.squeeze(-1) - td_targets.detach()) ** 2)
+        value_loss = torch.mean((state_values - td_targets.detach()) ** 2)
 
         # Entropy loss (for exploration)
         entropy_loss = -torch.mean(torch.sum(action_probs * torch.log(action_probs + 1e-10), dim=1))
