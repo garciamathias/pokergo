@@ -6,6 +6,7 @@ set_seed(42)
 
 agent_list = []
 
+
 # Create the Q-learning agents for 3 players
 for i in range(3):  # Changed from 6 to 3
     agent = PokerAgent(
@@ -23,7 +24,7 @@ for i in range(3):  # Changed from 6 to 3
 # Create the Q-learning agent (and duplicate it 6 times)
 agent = PokerAgent(
     state_size=STATE_SIZE,
-    action_sizes=[4], # [check, call, fold, raise]
+    action_size=[5], # [check, call, fold, raise, all-in]
     gamma=GAMMA,
     learning_rate=ALPHA,
     load_model=False,

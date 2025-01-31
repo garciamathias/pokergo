@@ -1,4 +1,0 @@
-# open saved_models dir
-# first delete all the saved models not containing the word epoch
-# then rename files in the format poker_agent_player_3_epoch_10000 into poker_agent_player_3.pth
-
