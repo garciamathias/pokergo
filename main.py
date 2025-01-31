@@ -13,7 +13,7 @@ for i in range(6):
         action_sizes=[5],  # Updated to 5 actions [check, call, fold, raise, all-in]
         gamma=GAMMA,
         learning_rate=ALPHA,
-        load_model=False,
+        load_model=True,
         load_path=f"saved_models/poker_agent_player_{i+1}.pth"
     )
     agent.name = f"player_{i+1}"

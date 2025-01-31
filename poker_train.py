@@ -13,9 +13,9 @@ from vizualization import plot_rewards, update_rewards_history, plot_winning_sta
 EPISODES = 10000
 GAMMA = 0.9985
 ALPHA = 0.003
-EPS_DECAY = 0.9998
+EPS_DECAY =  0.0 #0.9998
 STATE_SIZE = 46
-RENDERING = False
+RENDERING = True
 FPS = 1
 
 def set_seed(seed=42):
