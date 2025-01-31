@@ -1,6 +1,6 @@
 TODO:
 1. Fix float consistency for stacks and bets (DONE)
-2. Implement split pot handling for ties
+2. Implement split pot handling for ties (DONE)
 3. Enforce valid actions in agent logic (DONE)
 4. Correct minimum raise calculation
 5. Handle all-in and side pots properly
@@ -12,3 +12,5 @@ TODO:
 11. Refactor reward and penalty logic
 12. Use a robust poker hand evaluator library
 13. Enhance UI for split pots and side pots
+14. Manual run is not working exactly as training mode (DONE)
+15. Fix the reward system

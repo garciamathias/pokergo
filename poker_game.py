@@ -162,7 +162,7 @@ class PokerGame:
         self.num_players = num_players
         self.small_blind = float(small_blind)  # Maintenant 0.5 BB
         self.big_blind = float(big_blind)      # Maintenant 1 BB
-        self.pot = 0
+        self.pot = 0.0
         self.deck: List[Card] = self._create_deck()
         self.community_cards: List[Card] = []
         self.current_phase = GamePhase.PREFLOP
@@ -190,6 +190,8 @@ class PokerGame:
         self.winner_display_start = 0
         self.winner_display_duration = 5000  # 5 seconds in milliseconds
         
+        self.last_bet = 0.0  # Track last bet for minimum raise calculation
+        
         self.start_new_hand()
 
     def reset(self):
@@ -197,7 +199,7 @@ class PokerGame:
         Reset the game state for a new hand. Reinitializes the game.
         """
         # Reset game state variables
-        self.pot = 0
+        self.pot = 0.0
         self.community_cards = []
         self.current_phase = GamePhase.PREFLOP
         self.deck = self._create_deck()
@@ -246,7 +248,7 @@ class PokerGame:
         Posts blinds, deals cards, and sets up the initial betting round.
         """
         # Reset game state
-        self.pot = 0
+        self.pot = 0.0
         self.community_cards = []
         self.current_phase = GamePhase.PREFLOP
         self.current_bet = self.big_blind
@@ -529,10 +531,16 @@ class PokerGame:
             print(f"{player.name} calls {call_amount:.1f} BB")
             
         elif action == PlayerAction.RAISE and bet_amount is not None:
-            # Calculate raise amount based on current bet and player's stack
-            min_raise = max(self.current_bet * 2, self.big_blind * 2)
+            # Calculate minimum raise based on the last raise amount
+            last_raise_amount = self.current_bet - self.last_bet if hasattr(self, 'last_bet') else self.big_blind
+            min_raise = self.current_bet + last_raise_amount
             max_raise = player.stack + player.current_bet
+            
+            # Ensure bet is within valid range
             bet_amount = max(min_raise, min(max_raise, bet_amount))
+            
+            # Store the current bet for next raise calculation
+            self.last_bet = self.current_bet
             
             raise_amount = bet_amount - player.current_bet
             player.stack -= raise_amount
