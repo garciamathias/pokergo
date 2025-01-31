@@ -8,10 +8,10 @@ agent_list = []
 
 
 # Create the Q-learning agents
-for i in range(6):
+for i in range(3):
     agent = PokerAgent(
         state_size=STATE_SIZE,
-        action_size=5,  # Updated to 5 actions [check, call, fold, raise, all-in]
+        action_size=5,  # [check, call, fold, raise, all-in]
         gamma=GAMMA,
         learning_rate=ALPHA,
         load_model=False,
