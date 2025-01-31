@@ -1,173 +1,193 @@
+import matplotlib
+matplotlib.use('Agg')  # Use Agg backend that doesn't require GUI
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import List, Dict
 import seaborn as sns
 import os
 
-def plot_rewards(rewards_history: Dict[str, List[float]], window_size: int = 50, save_path: str = "viz_rewards.jpg"):
-    """
-    Plot the mean reward curves for each player with a moving average.
+class TrainingVisualizer:
+    def __init__(self):
+        # Create three subplots
+        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3, 1, figsize=(12, 12))
+        
+        # Configure plots
+        self.ax1.set_title('Average Reward per Agent')
+        self.ax2.set_title('Win Rate per Agent')
+        self.ax3.set_title('Action Distribution per Agent')
+        
+        # Initialize data
+        self.window_size = 50
+        self.rewards_data = {f"Agent {i+1}": [] for i in range(3)}
+        self.wins_data = {f"Agent {i+1}": [] for i in range(3)}
+        self.action_data = {f"Agent {i+1}": {
+            'FOLD': [], 'CHECK': [], 'CALL': [], 'RAISE': [], 'ALL_IN': []
+        } for i in range(3)}
+        self.episodes = []
+        
+        # Colors for agents and actions
+        self.colors = ['red', 'green', 'blue']
+        self.action_colors = {
+            'FOLD': '#FF9999',    # Light red
+            'CHECK': '#99FF99',   # Light green
+            'CALL': '#9999FF',    # Light blue
+            'RAISE': '#FFFF99',   # Yellow
+            'ALL_IN': '#FF99FF'   # Pink
+        }
+        
+        # Configure axes
+        self.ax1.set_xlabel('Episodes')
+        self.ax1.set_ylabel('Average Reward')
+        self.ax2.set_xlabel('Episodes')
+        self.ax2.set_ylabel('Win Rate (%)')
+        self.ax3.set_xlabel('Episodes')
+        self.ax3.set_ylabel('Action Distribution (%)')
+        
+        # Add grids
+        self.ax1.grid(True)
+        self.ax2.grid(True)
+        self.ax3.grid(True)
+        
+        # Initialize lines for rewards and wins
+        self.reward_lines = {}
+        self.win_lines = {}
+        for i, agent_name in enumerate(self.rewards_data.keys()):
+            self.reward_lines[agent_name], = self.ax1.plot([], [], 
+                                                         label=agent_name, 
+                                                         color=self.colors[i])
+            self.win_lines[agent_name], = self.ax2.plot([], [], 
+                                                      label=agent_name, 
+                                                      color=self.colors[i])
+        
+        self.ax1.legend()
+        self.ax2.legend()
+        
+        # Add counter for file saves
+        self.save_counter = 0
+        self.save_interval = 100  # Save every 100 updates
+
+    def update_action_distribution(self, agent_name, action):
+        """Update action distribution for an agent"""
+        action_name = action.name if hasattr(action, 'name') else action
+        for act in self.action_data[agent_name].keys():
+            self.action_data[agent_name][act].append(1 if act == action_name else 0)
     
-    Args:
-        rewards_history (Dict[str, List[float]]): Dictionary mapping player names to their reward histories
-        window_size (int): Size of the moving average window
-        save_path (str): Path where to save the JPEG plot
-    """
-    try:
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else '.', exist_ok=True)
+    def plot_action_distribution(self):
+        """Plot action distribution for each agent"""
+        self.ax3.clear()
+        self.ax3.set_title('Action Distribution per Agent')
+        self.ax3.grid(True)
         
-        # Clear any existing plots
-        plt.clf()
-        plt.close('all')
+        bar_width = 0.25
+        agent_positions = np.arange(len(self.rewards_data))
         
-        # Create new figure with high DPI
-        plt.figure(figsize=(12, 8), dpi=300)
-        
-        # Set style - using a built-in style instead of seaborn
-        plt.style.use('bmh')
-        
-        # Set color palette manually
-        colors = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF']
-        
-        # Plot for each player
-        for i, (player_name, rewards) in enumerate(rewards_history.items()):
-            if len(rewards) < window_size:
-                print(f"Warning: Not enough data points for {player_name} to calculate moving average")
-                continue
-                
-            # Calculate moving average
-            moving_avg = np.convolve(rewards, np.ones(window_size)/window_size, mode='valid')
-            episodes = range(len(moving_avg))
+        for action_idx, action_name in enumerate(self.action_data['Agent 1'].keys()):
+            action_percentages = []
+            for agent_name in self.rewards_data.keys():
+                action_counts = self.action_data[agent_name][action_name]
+                if action_counts:
+                    percentage = sum(action_counts[-self.window_size:]) / min(len(action_counts), self.window_size) * 100
+                else:
+                    percentage = 0
+                action_percentages.append(percentage)
             
-            # Plot the moving average with cycling colors
-            plt.plot(episodes, moving_avg, 
-                    label=f'{player_name} (MA{window_size})',
-                    color=colors[i % len(colors)],
-                    linewidth=1.5)
+            self.ax3.bar(agent_positions + action_idx * bar_width, 
+                        action_percentages,
+                        bar_width,
+                        label=action_name,
+                        color=self.action_colors[action_name])
         
-        # Customize plot
-        plt.title('Mean Reward per Player Over Time', fontsize=14, pad=20)
-        plt.xlabel('Episode', fontsize=12)
-        plt.ylabel('Mean Reward', fontsize=12)
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.grid(True, alpha=0.3)
+        self.ax3.set_xticks(agent_positions + bar_width * 2)
+        self.ax3.set_xticklabels(self.rewards_data.keys())
+        self.ax3.legend()
+        self.ax3.set_ylim(0, 100)
         
-        # Adjust layout to prevent label cutoff
-        plt.tight_layout()
+    def update_plots(self, episode, rewards, wins, actions):
+        """Update all plots with new data"""
+        # Update data
+        self.episodes.append(episode)
         
-        # Save plot as JPEG with high quality
-        plt.savefig(save_path, 
-                   format='jpg',
-                   bbox_inches='tight',
-                   dpi=300,
-                   pad_inches=0.1)
+        # Update rewards and wins
+        for i, agent_name in enumerate(self.rewards_data.keys()):
+            self.rewards_data[agent_name].append(rewards[i])
+            self.wins_data[agent_name].append(wins[i])
+            if actions and i < len(actions):
+                self.update_action_distribution(agent_name, actions[i])
+            
+            # Calculate moving average of rewards
+            if len(self.rewards_data[agent_name]) >= self.window_size:
+                moving_avg = [
+                    sum(self.rewards_data[agent_name][max(0, j-self.window_size):j])/min(j, self.window_size)
+                    for j in range(1, len(self.rewards_data[agent_name])+1)
+                ]
+                self.reward_lines[agent_name].set_data(self.episodes, moving_avg)
+            
+            # Calculate cumulative win rate
+            if len(self.wins_data[agent_name]) > 0:
+                win_rates = [
+                    sum(self.wins_data[agent_name][:j+1])/(j+1) * 100
+                    for j in range(len(self.wins_data[agent_name]))
+                ]
+                self.win_lines[agent_name].set_data(self.episodes, win_rates)
         
-        # Close all figures to free memory
-        plt.close('all')
+        # Update action distribution
+        self.plot_action_distribution()
         
-        print(f"Successfully saved plot to {save_path}")
+        # Adjust axis limits
+        for ax in [self.ax1, self.ax2]:
+            ax.relim()
+            ax.autoscale_view()
         
-    except Exception as e:
-        print(f"Error while creating plot: {str(e)}")
-        # Clean up in case of error
-        plt.close('all')
+        # Adjust y-axis limits for win rate
+        self.ax2.set_ylim([-5, 105])
+        
+        # Save file less frequently
+        self.save_counter += 1
+        if self.save_counter >= self.save_interval:
+            plt.tight_layout()
+            self.fig.savefig('viz_pdf/training_progress.jpg')
+            self.save_counter = 0
 
-def update_rewards_history(rewards_history: Dict[str, List[float]], 
-                         episode_rewards: List[float], 
-                         agent_list: List) -> Dict[str, List[float]]:
-    """
-    Update the rewards history dictionary with new episode rewards.
+def plot_rewards(rewards_history: dict, window_size: int = 50, save_path: str = "viz_pdf/poker_rewards.jpg"):
+    """Plot evolution of average rewards for each agent"""
+    plt.figure(figsize=(10, 6))
+    colors = ['red', 'green', 'blue']
     
-    Args:
-        rewards_history (Dict[str, List[float]]): Current rewards history
-        episode_rewards (List[float]): Rewards from the current episode
-        agent_list (List): List of agents
-        
-    Returns:
-        Dict[str, List[float]]: Updated rewards history
-    """
-    try:
-        for i, reward in enumerate(episode_rewards):
-            player_name = agent_list[i].name
-            if player_name not in rewards_history:
-                rewards_history[player_name] = []
-            rewards_history[player_name].append(reward)
-        
-        return rewards_history
-    except Exception as e:
-        print(f"Error while updating rewards history: {str(e)}")
-        return rewards_history
+    for (agent_name, rewards), color in zip(rewards_history.items(), colors):
+        if len(rewards) >= window_size:
+            moving_avg = [
+                sum(rewards[i:i+window_size])/window_size 
+                for i in range(len(rewards)-window_size+1)
+            ]
+            episodes = range(window_size-1, len(rewards))
+            plt.plot(episodes, moving_avg, label=agent_name, color=color)
+    
+    plt.title(f'Average Rewards ({window_size} episode window)')
+    plt.xlabel('Episode')
+    plt.ylabel('Average Reward')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(save_path)
+    plt.close()
 
-def plot_winning_stats(winning_history: Dict[str, List[int]], save_path: str = "viz_wins.jpg"):
-    """
-    Plot the winning statistics for each player.
+def plot_winning_stats(winning_history: dict, window_size: int = 50, save_path: str = "viz_pdf/poker_wins.jpg"):
+    """Plot evolution of win rate for each agent"""
+    plt.figure(figsize=(10, 6))
+    colors = ['red', 'green', 'blue']
     
-    Args:
-        winning_history (Dict[str, List[int]]): Dictionary mapping player names to their win histories
-        save_path (str): Path where to save the JPEG plot
-    """
-    try:
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else '.', exist_ok=True)
-        
-        plt.clf()
-        plt.close('all')
-        
-        plt.figure(figsize=(12, 8), dpi=300)
-        plt.style.use('bmh')
-        
-        # Calculate win percentages
-        win_percentages = {}
-        total_games = sum(len(wins) for wins in winning_history.values())
-        
-        for player_name, wins in winning_history.items():
-            win_count = sum(1 for win in wins if win == 1)
-            win_percentages[player_name] = (win_count / total_games) * 100
-        
-        # Create bar plot
-        plt.bar(win_percentages.keys(), win_percentages.values())
-        
-        plt.title('Win Percentage by Player', fontsize=14, pad=20)
-        plt.xlabel('Player', fontsize=12)
-        plt.ylabel('Win Percentage (%)', fontsize=12)
-        plt.grid(True, alpha=0.3)
-        
-        # Rotate x-axis labels for better readability
-        plt.xticks(rotation=45)
-        
-        plt.tight_layout()
-        plt.savefig(save_path, format='jpg', bbox_inches='tight', dpi=300, pad_inches=0.1)
-        plt.close('all')
-        
-        print(f"Successfully saved winning stats plot to {save_path}")
-        
-    except Exception as e:
-        print(f"Error while creating winning stats plot: {str(e)}")
-        plt.close('all')
-
-def update_winning_history(winning_history: Dict[str, List[int]], 
-                         episode_winners: List[int], 
-                         agent_list: List) -> Dict[str, List[int]]:
-    """
-    Update the winning history dictionary with new episode winners.
+    for (agent_name, wins), color in zip(winning_history.items(), colors):
+        if len(wins) >= window_size:
+            win_rate = [
+                sum(wins[i:i+window_size])/window_size * 100 
+                for i in range(len(wins)-window_size+1)
+            ]
+            episodes = range(window_size-1, len(wins))
+            plt.plot(episodes, win_rate, label=agent_name, color=color)
     
-    Args:
-        winning_history (Dict[str, List[int]]): Current winning history
-        episode_winners (List[int]): Binary list indicating winners (1) and losers (0)
-        agent_list (List): List of agents
-        
-    Returns:
-        Dict[str, List[int]]: Updated winning history
-    """
-    try:
-        for i, is_winner in enumerate(episode_winners):
-            player_name = agent_list[i].name
-            if player_name not in winning_history:
-                winning_history[player_name] = []
-            winning_history[player_name].append(is_winner)
-        
-        return winning_history
-    except Exception as e:
-        print(f"Error while updating winning history: {str(e)}")
-        return winning_history
+    plt.title(f'Win Rate ({window_size} episode window)')
+    plt.xlabel('Episode')
+    plt.ylabel('Win Rate (%)')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(save_path)
+    plt.close()
