@@ -1,3 +1,4 @@
+# poker_test.py
 import pygame
 from poker_game import PokerGame
 from poker_agents import PokerAgent
@@ -18,7 +19,7 @@ def main():
             action_size=5,
             gamma=0.9985,
             learning_rate=0.003,
-            load_model=True,
+            load_model=False,
             load_path=f"saved_models/poker_agent_player_{i}.pth"
         )
         agent.name = f"player_{i}"
