@@ -119,24 +119,21 @@ class Player:
         Initialize a player with name, starting stack, and table position.
         Args:
             name (str): Player's name
-            stack (int): Starting chip stack (in blinds)
-            position (int): Table position (0-5)
+            stack (int): Starting chip stack
+            position (int): Table position (0-2)
         """
         self.name = name
-        self.stack = stack  # Maintenant exprimé en blindes
+        self.stack = stack
         self.position = position
         self.cards: List[Card] = []
         self.is_active = True
-        self.current_bet = 0  # Maintenant exprimé en blindes
+        self.current_bet = 0
         self.is_human = True
         self.has_acted = False
         positions = [
             (600, 700),  # Bottom (Player 1)
-            (200, 600),  # Bottom Left (Player 2)
-            (150, 300),  # Middle Left (Player 3)
-            (600, 100),  # Top (Player 4)
-            (1050, 300), # Middle Right (Player 5)
-            (1000, 600)  # Bottom Right (Player 6)
+            (200, 300),  # Left (Player 2)
+            (1000, 300)  # Right (Player 3)
         ]
         self.x, self.y = positions[position]
 
@@ -144,24 +141,43 @@ class PokerGame:
     """
     Main game class that manages the poker game state and logic.
     """
-    def __init__(self, num_players: int = 6, small_blind: int = 0.5, big_blind: int = 1):
+    def __init__(self, num_players: int = 3, small_blind: int = 10, big_blind: int = 20):
         """
         Initialize the poker game with players and blinds.
         Args:
-            num_players (int): Number of players (default: 6)
-            small_blind (int): Small blind amount (default: 0.5 BB)
-            big_blind (int): Big blind amount (default: 1 BB)
+            num_players (int): Number of players (default: 3)
+            small_blind (int): Starting small blind amount (default: 10)
+            big_blind (int): Starting big blind amount (default: 20)
         """
         pygame.init()
         pygame.font.init()
         self.SCREEN_WIDTH = 1400
         self.SCREEN_HEIGHT = 900
         self.screen = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
-        pygame.display.set_caption("6-Max Poker")
+        pygame.display.set_caption("3-Max Poker")
         self.font = pygame.font.SysFont('Arial', 24)
-        self.num_players = num_players
-        self.small_blind = small_blind  # Maintenant 0.5 BB
-        self.big_blind = big_blind      # Maintenant 1 BB
+        self.num_players = 3
+        
+        # Structure des blindes
+        self.blind_levels = [
+            (10, 20),   # Niveau 1
+            (15, 30),   # Niveau 2
+            (20, 40),   # Niveau 3
+            (30, 60),   # Niveau 4
+            (40, 80),   # Niveau 5
+            (50, 100),  # Niveau 6
+            (60, 120),  # Niveau 7
+            (80, 160),  # Niveau 8
+            (100, 200)  # Niveau 9
+        ]
+        self.current_blind_level = 0
+        self.hands_until_blind_increase = 4
+        self.hands_played = 0
+        
+        self.small_blind = self.blind_levels[0][0]
+        self.big_blind = self.blind_levels[0][1]
+        self.starting_stack = 500  # Stack de départ fixé à 500 jetons
+        
         self.pot = 0
         self.deck: List[Card] = self._create_deck()
         self.community_cards: List[Card] = []
@@ -213,7 +229,7 @@ class PokerGame:
             player.current_bet = 0
             player.is_active = True
             player.has_acted = False
-            player.stack = 75  # 75 BB de stack de départ
+            player.stack = 200 * self.big_blind  # Reset to starting stack
         
         # Reset button and blinds
         self.button_position = (self.button_position + 1) % self.num_players
@@ -245,13 +261,16 @@ class PokerGame:
         Reset game state and start a new hand.
         Posts blinds, deals cards, and sets up the initial betting round.
         """
+        # Update blinds before starting new hand
+        self.update_blinds()
+        
         # Reset game state
         self.pot = 0
         self.community_cards = []
         self.current_phase = GamePhase.PREFLOP
         self.current_bet = self.big_blind
         self.last_raiser = None
-        self.round_number = 0  # Reset round number for new hand
+        self.round_number = 0
         
         # Reset player states and check for bankrupted players
         active_players_count = 0
@@ -259,7 +278,6 @@ class PokerGame:
             player.cards = []
             player.current_bet = 0
             player.has_acted = False
-            # Check if player has enough chips for big blind
             if player.stack >= self.big_blind:
                 player.is_active = True
                 active_players_count += 1
@@ -273,70 +291,66 @@ class PokerGame:
             self.reset()
             return
         
-        # Move button position to next active player
-        original_button = self.button_position
+        # Move button position
         self.button_position = (self.button_position + 1) % self.num_players
-        while not self.players[self.button_position].is_active:
-            self.button_position = (self.button_position + 1) % self.num_players
-            if self.button_position == original_button:  # We've gone full circle
-                # Find first active player
-                for i in range(self.num_players):
-                    if self.players[i].is_active:
-                        self.button_position = i
-                        break
         
-        # Post blinds
-        sb_pos = (self.button_position + 1) % self.num_players
-        bb_pos = (self.button_position + 2) % self.num_players
-        
-        # Find next active player for small blind if current is inactive
-        original_sb_pos = sb_pos
-        while not self.players[sb_pos].is_active:
-            sb_pos = (sb_pos + 1) % self.num_players
-            if sb_pos == original_sb_pos:  # We've gone full circle
-                print("Error: No active players found for small blind")
-                self.reset()
-                return
-        
-        # Find next active player for big blind
-        bb_pos = (sb_pos + 1) % self.num_players
-        original_bb_pos = bb_pos
-        while not self.players[bb_pos].is_active:
-            bb_pos = (bb_pos + 1) % self.num_players
-            if bb_pos == original_bb_pos:  # We've gone full circle
-                print("Error: No active players found for big blind")
-                self.reset()
-                return
-        
-        # Post blinds if both players can afford them
-        sb_player = self.players[sb_pos]
-        bb_player = self.players[bb_pos]
-        
-        sb_player.stack -= self.small_blind
-        sb_player.current_bet = self.small_blind
-        bb_player.stack -= self.big_blind
-        bb_player.current_bet = self.big_blind
-        
-        self.pot = self.small_blind + self.big_blind
-        
-        # Deal cards only to active players
-        self.deal_cards()
-        
-        # Set starting player (UTG) - first active player after BB
-        self.current_player_idx = (bb_pos + 1) % self.num_players
-        original_utg = self.current_player_idx
-        while not self.players[self.current_player_idx].is_active:
-            self.current_player_idx = (self.current_player_idx + 1) % self.num_players
-            if self.current_player_idx == original_utg:  # We've gone full circle
-                print("Error: No active players found after big blind")
-                self.reset()
-                return
+        # En heads-up (2 joueurs actifs), le bouton est la petite blind
+        active_players = [p for p in self.players if p.is_active]
+        if len(active_players) == 2:
+            # Le bouton (petite blind) agit en premier preflop, mais reçoit ses cartes en dernier
+            sb_pos = self.button_position  # Le bouton est la petite blind
+            bb_pos = (self.button_position + 1) % self.num_players
+            
+            # Post blinds
+            self.players[sb_pos].stack -= self.small_blind
+            self.players[sb_pos].current_bet = self.small_blind
+            self.players[bb_pos].stack -= self.big_blind
+            self.players[bb_pos].current_bet = self.big_blind
+            
+            self.pot = self.small_blind + self.big_blind
+            
+            # Deal cards - BB reçoit en premier, SB en dernier
+            self.deal_cards_heads_up(bb_pos, sb_pos)
+            
+            # En preflop, BB agit en premier
+            self.current_player_idx = bb_pos
+        else:
+            # Plus de 2 joueurs - logique normale
+            sb_pos = (self.button_position + 1) % self.num_players
+            bb_pos = (self.button_position + 2) % self.num_players
+            
+            # Post blinds
+            self.players[sb_pos].stack -= self.small_blind
+            self.players[sb_pos].current_bet = self.small_blind
+            self.players[bb_pos].stack -= self.big_blind
+            self.players[bb_pos].current_bet = self.big_blind
+            
+            self.pot = self.small_blind + self.big_blind
+            
+            # Deal cards normalement
+            self.deal_cards()
+            
+            # Set starting player (UTG)
+            self.current_player_idx = (bb_pos + 1) % self.num_players
 
-        # Clear action history at the start of each hand
-        self.action_history = []
+    def deal_cards_heads_up(self, bb_pos: int, sb_pos: int):
+        """
+        Deal cards specifically for heads-up play.
+        BB receives cards first, SB (button) receives last.
+        """
+        self.deck = self._create_deck()
         
-        # Reset winner info
-        self.winner_info = None
+        # Clear previous hands
+        for player in self.players:
+            player.cards = []
+        self.community_cards = []
+        
+        # Deal two cards to each active player in the correct order
+        for _ in range(2):
+            # BB gets cards first
+            self.players[bb_pos].cards.append(self.deck.pop())
+            # SB (button) gets cards last
+            self.players[sb_pos].cards.append(self.deck.pop())
 
     def evaluate_hand(self, player: Player) -> Tuple[HandRank, List[int]]:
         """
@@ -667,9 +681,8 @@ class PokerGame:
             List[Player]: List of initialized player objects
         """
         players = []
-        starting_stack = 75  # 75 BB de stack de départ
         for i in range(self.num_players):
-            player = Player(f"Player {i+1}", starting_stack, i)
+            player = Player(f"Player {i+1}", self.starting_stack, i)
             players.append(player)
         return players
     
@@ -736,7 +749,7 @@ class PokerGame:
         
         # Draw player info with 2 decimal places
         name_color = (0, 255, 255) if player.position == self.current_player_idx else (255, 255, 255)
-        name_text = self.font.render(f"{player.name} ({player.stack:.1f} BB)", True, name_color)
+        name_text = self.font.render(f"{player.name} (${player.stack:.2f})", True, name_color)
         self.screen.blit(name_text, (player.x - 50, player.y - 40))
         
         # Draw player cards
@@ -751,7 +764,7 @@ class PokerGame:
         
         # Draw current bet with 2 decimal places
         if player.current_bet > 0:
-            bet_text = self.font.render(f"Bet: {player.current_bet:.1f} BB", True, (255, 255, 0))
+            bet_text = self.font.render(f"Bet: ${player.current_bet:.2f}", True, (255, 255, 0))
             self.screen.blit(bet_text, (player.x - 30, player.y + 80))
     
     def _draw(self):
@@ -762,16 +775,16 @@ class PokerGame:
         # Clear screen
         self.screen.fill((0, 100, 0))  # Green felt background
         
-        # Draw table
-        pygame.draw.ellipse(self.screen, (139, 69, 19), (100, 100, 1000, 600))
-        pygame.draw.ellipse(self.screen, (165, 42, 42), (120, 120, 960, 560))
+        # Draw table (smaller for 3 players)
+        pygame.draw.ellipse(self.screen, (139, 69, 19), (200, 100, 800, 500))
+        pygame.draw.ellipse(self.screen, (165, 42, 42), (220, 120, 760, 460))
         
         # Draw community cards
         for i, card in enumerate(self.community_cards):
             self._draw_card(card, 400 + i * 60, 350)
         
         # Draw pot with 2 decimal places
-        pot_text = self.font.render(f"Pot: {self.pot:.1f} BB", True, (255, 255, 255))
+        pot_text = self.font.render(f"Pot: ${self.pot:.2f}", True, (255, 255, 255))
         self.screen.blit(pot_text, (550, 300))
         
         # Draw players
@@ -801,13 +814,13 @@ class PokerGame:
         
         # Draw bet slider with min and max values
         current_player = self.players[self.current_player_idx]
-        min_raise = max(self.current_bet * 2, 2)  # Minimum 2 BB
+        min_raise = max(self.current_bet * 2, self.big_blind * 2)
         max_raise = current_player.stack + current_player.current_bet
         
         pygame.draw.rect(self.screen, (200, 200, 200), self.bet_slider)
-        bet_text = self.font.render(f"Bet: {self.current_bet_amount:.1f} BB", True, (255, 255, 255))
-        min_text = self.font.render(f"Min: {min_raise:.1f} BB", True, (255, 255, 255))
-        max_text = self.font.render(f"Max: {max_raise:.1f} BB", True, (255, 255, 255))
+        bet_text = self.font.render(f"Bet: ${int(self.current_bet_amount)}", True, (255, 255, 255))
+        min_text = self.font.render(f"Min: ${min_raise}", True, (255, 255, 255))
+        max_text = self.font.render(f"Max: ${max_raise}", True, (255, 255, 255))
         
         self.screen.blit(bet_text, (50, self.SCREEN_HEIGHT - 75))
         self.screen.blit(min_text, (self.bet_slider.x, self.SCREEN_HEIGHT - 125))
@@ -858,6 +871,17 @@ class PokerGame:
                 self.winner_info = None
                 self.button_position = (self.button_position + 1) % self.num_players
                 self.start_new_hand()
+
+        # Ajouter l'affichage des blindes actuelles
+        blind_text = self.font.render(f"Blindes: {self.small_blind}/{self.big_blind}", True, (255, 255, 255))
+        self.screen.blit(blind_text, (50, 25))
+        
+        hands_left_text = self.font.render(
+            f"Mains avant augmentation: {self.hands_until_blind_increase - (self.hands_played % self.hands_until_blind_increase)}", 
+            True, 
+            (255, 255, 255)
+        )
+        self.screen.blit(hands_left_text, (50, 75))
 
     def handle_input(self, event):
         """
@@ -1008,7 +1032,7 @@ class PokerGame:
         state.append(self.current_bet / self.big_blind)
 
         # 6. Money left (stack sizes normalized by initial stack)
-        initial_stack = 75 * self.big_blind
+        initial_stack = 200 * self.big_blind
         for player in self.players:
             state.append(player.stack / initial_stack)
 
@@ -1059,86 +1083,110 @@ class PokerGame:
 
         return state
 
-    def step(self, action):
+    def step(self, action: PlayerAction) -> Tuple[List[float], float]:
         """
-        Process a player's action and update game state.
-        
-        Reward system:
-        - Invalid actions: -40 (heavily penalize invalid actions)
-        - Fold: Small negative reward (-1) to discourage unnecessary folding
-        - Check/Call: Neutral reward (0)
-        - Raise: Small positive reward (1) to encourage aggression
-        - Winning pot: Large positive reward (pot size)
-        - Losing hand: Negative reward (-amount_lost)
-        
-        Returns:
-            tuple: (next_state, reward) where next_state is the new game state 
-            and reward is the numerical feedback for the action
+        Execute une action et retourne le nouvel état et la récompense
         """
         current_player = self.players[self.current_player_idx]
         initial_stack = current_player.stack
-        reward = 0
-
-        # Penalize invalid actions
-        if not self.action_buttons[action].enabled:
-            reward = -40
-            valid_actions = [a for a in PlayerAction if self.action_buttons[a].enabled]
-            action = rd.choice(valid_actions)
+        initial_pot = self.pot
+        position_reward = 0.1 * (1 - self.current_player_idx/len(self.players))  # Récompense la position tardive
         
-        # Process the action
-        if action == PlayerAction.RAISE:
-            min_raise = max(self.current_bet * 2, self.big_blind * 2)
-            max_raise = current_player.stack + current_player.current_bet
+        # Évaluer la force de la main actuelle
+        hand_strength = self._evaluate_hand_strength(current_player)
+        
+        if action == PlayerAction.RAISE or action == PlayerAction.ALL_IN:
+            bet_size = self.current_bet if action == PlayerAction.RAISE else current_player.stack
+            pot_odds = bet_size / (self.pot + bet_size)
             
-            self.current_bet_amount = max(min_raise, min(max_raise, self.current_bet_amount))
-            raise_amount = self.current_bet_amount - current_player.current_bet
-            
-            if raise_amount <= current_player.stack:
-                current_player.stack -= raise_amount
-                current_player.current_bet += raise_amount
-                self.current_bet = current_player.current_bet
-                self.pot += raise_amount
-                reward = 1  # Small positive reward for raising
+            if hand_strength > pot_odds:
+                reward = 0.2  # Bonne relance basée sur les cotes du pot
             else:
-                action = PlayerAction.CALL
-        
-        if action == PlayerAction.CALL:
-            call_amount = self.current_bet - current_player.current_bet
-            call_amount = min(call_amount, current_player.stack)
-            current_player.stack -= call_amount
-            current_player.current_bet += call_amount
-            self.pot += call_amount
-            reward = 0  # Neutral reward for calling
-        
+                reward = -0.2  # Mauvaise relance (bluff)
+            
+        elif action == PlayerAction.CALL:
+            pot_odds = self.current_bet / (self.pot + self.current_bet)
+            
+            if hand_strength > pot_odds:
+                reward = 0.1  # Call correct basé sur les cotes du pot
+            else:
+                reward = -0.1  # Mauvais call
+            
         elif action == PlayerAction.FOLD:
-            current_player.is_active = False
-            reward = -1  # Small negative reward for folding
-        
+            if hand_strength < 0.3:  # Fold avec une main faible
+                reward = 0.1
+            else:
+                reward = -0.2  # Fold avec une main forte
+            
         elif action == PlayerAction.CHECK:
-            reward = 0  # Neutral reward for checking
-
+            if hand_strength > 0.7:  # Check avec une main forte (slow play)
+                reward = 0.15
+            elif hand_strength < 0.3:  # Check avec une main faible
+                reward = 0.1
+            else:
+                reward = 0  # Check neutre avec une main moyenne
+        
         # Process the action in the game state
         self.process_action(current_player, action)
         
-        # Add showdown rewards
+        # Récompenses additionnelles basées sur le résultat
         if self.current_phase == GamePhase.SHOWDOWN:
             active_players = [p for p in self.players if p.is_active]
             if len(active_players) == 1 and active_players[0] == current_player:
-                # Won by making others fold
-                reward = self.pot
+                # Gagné en faisant fold tous les autres
+                stack_change = (current_player.stack - initial_stack) / self.big_blind
+                reward += 1.0 + (0.1 * stack_change)  # Bonus basé sur les gains
             else:
-                # Showdown reached - evaluate hands
+                # Showdown atteint - évaluer les mains
                 player_hands = [(p, self.evaluate_hand(p)) for p in active_players]
                 player_hands.sort(key=lambda x: (x[1][0].value, x[1][1]), reverse=True)
                 if player_hands[0][0] == current_player:
-                    reward = self.pot  # Won at showdown
+                    stack_change = (current_player.stack - initial_stack) / self.big_blind
+                    reward += 1.5 + (0.1 * stack_change)  # Bonus plus important pour gagner au showdown
                 else:
-                    reward = -(initial_stack - current_player.stack)  # Lost at showdown
+                    reward -= 1.0  # Pénalité pour perdre au showdown
         
-        # Scale rewards based on big blind for consistency
-        reward = reward / self.big_blind
+        # Ajouter la récompense de position
+        reward += position_reward
         
         return self.get_state(), reward
+
+    def _evaluate_hand_strength(self, player) -> float:
+        """
+        Évalue la force relative d'une main (0 à 1)
+        """
+        if self.current_phase == GamePhase.PREFLOP:
+            return self._evaluate_preflop_strength(player.cards)
+        
+        # Évaluer la main complète avec les cartes communes
+        hand = self.evaluate_hand(player)
+        # Normaliser le score entre 0 et 1
+        return hand[0].value / 9  # 9 est la valeur max (ROYAL_FLUSH)
+
+    def _evaluate_preflop_strength(self, cards) -> float:
+        """
+        Évalue la force d'une main preflop
+        """
+        card1, card2 = cards
+        # Paires
+        if card1.value == card2.value:
+            return 0.5 + (card1.value / 28)  # Plus haute est la paire, plus fort est le score
+        
+        # Cartes assorties
+        suited = card1.suit == card2.suit
+        # Connecteurs
+        connected = abs(card1.value - card2.value) == 1
+        
+        # Score de base basé sur les valeurs des cartes
+        base_score = (card1.value + card2.value) / 28  # Normaliser par le max possible
+        
+        # Bonus pour suited et connected
+        if suited:
+            base_score += 0.1
+        if connected:
+            base_score += 0.05
+        
+        return min(base_score, 1.0)  # Garantir que le score est entre 0 et 1
 
     def manual_run(self):
         """
@@ -1169,6 +1217,17 @@ class PokerGame:
             pygame.display.flip()
         
         pygame.quit()
+
+    def update_blinds(self):
+        """
+        Met à jour les blindes tous les 4 mains si possible
+        """
+        self.hands_played += 1
+        if self.hands_played % self.hands_until_blind_increase == 0:
+            if self.current_blind_level < len(self.blind_levels) - 1:
+                self.current_blind_level += 1
+                self.small_blind, self.big_blind = self.blind_levels[self.current_blind_level]
+                print(f"Blindes augmentées à {self.small_blind}/{self.big_blind}")
 
 if __name__ == "__main__":
     game = PokerGame()
