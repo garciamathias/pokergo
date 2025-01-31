@@ -15,7 +15,7 @@ GAMMA = 0.9985
 ALPHA = 0.003
 EPS_DECAY =  0.9998
 STATE_SIZE = 46
-RENDERING = False
+RENDERING = True
 FPS = 1
 
 def set_seed(seed=42):
