@@ -509,7 +509,8 @@ class PokerGame:
             action_text += f" ${bet_amount}"
         self.action_history.append(action_text)
         if len(self.action_history) > 10:
-            self.action_history.pop(0)
+            self.action_history.pop(0)            
+
         
         # Process the action
         if action == PlayerAction.FOLD:
@@ -538,6 +539,8 @@ class PokerGame:
             for p in self.players:
                 if p != player and p.is_active:
                     p.has_acted = False
+            
+            self.number_raise_this_round += 1
         
         elif action == PlayerAction.ALL_IN:
             all_in_amount = player.stack + player.current_bet
@@ -547,6 +550,7 @@ class PokerGame:
             self.pot += total_to_put_in
             
             if all_in_amount > self.current_bet:
+                self.number_raise_this_round += 1
                 self.current_bet = all_in_amount
                 self.last_raiser = player
                 for p in self.players:
@@ -938,7 +942,7 @@ class PokerGame:
         if current_player.stack + current_player.current_bet < min_raise:
             self.action_buttons[PlayerAction.RAISE].enabled = False
         
-        # Also if the player has already raised 3 times, disable raise
+        # Also if the player has already raised 4 times, disable raise
         if self.number_raise_this_round >= 4:
             self.action_buttons[PlayerAction.RAISE].enabled = False
 
@@ -1158,7 +1162,7 @@ class PokerGame:
                     if event.key == pygame.K_ESCAPE:
                         running = False
                     if event.key == pygame.K_SPACE:
-                        self.start_new_hand()
+                        self.reset()
                 
                 self.handle_input(event)
                 
