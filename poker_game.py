@@ -609,37 +609,39 @@ class PokerGame:
         print("\n=== SHOWDOWN ===")
         self.current_phase = GamePhase.SHOWDOWN
         active_players = [p for p in self.players if p.is_active]
-        print(f"Active players in showdown: {[p.name for p in active_players]}")
-        
-        # Disable all action buttons during showdown
-        for button in self.action_buttons.values():
-            button.enabled = False
         
         if len(active_players) == 1:
+            # Single player remaining wins the pot
             winner = active_players[0]
             winner.stack += self.pot
-            self.winner_info = f"{winner.name} wins ${self.pot} (all others folded)"
-            print(f"Winner by fold: {winner.name}")
-            print(f"Winning amount: ${self.pot}")
+            self.winner_info = f"{winner.name} wins {self.pot:.1f} BB (all others folded)"
+            return
+
+        # Evaluate all hands
+        player_hands = [(player, self.evaluate_hand(player)) for player in active_players]
+        
+        # Group players by hand rank
+        best_hand_rank = max(hand[1][0].value for hand in player_hands)
+        best_hand_players = [ph for ph in player_hands if ph[1][0].value == best_hand_rank]
+        
+        # Compare kickers for players with same hand rank
+        best_kickers = max(ph[1][1] for ph in best_hand_players)
+        winners = [ph[0] for ph in best_hand_players if ph[1][1] == best_kickers]
+        
+        # Split pot among winners
+        split_amount = self.pot / len(winners)
+        for winner in winners:
+            winner.stack += split_amount
+        
+        # Format winner message
+        if len(winners) == 1:
+            winner_msg = f"{winners[0].name} wins {self.pot:.1f} BB"
         else:
-            # Make sure all community cards are dealt for all-in situations
-            while len(self.community_cards) < 5:
-                self.community_cards.append(self.deck.pop())
-            
-            # Evaluate hands and find winner
-            player_hands = [(player, self.evaluate_hand(player)) for player in active_players]
-            for player, (hand_rank, _) in player_hands:
-                print(f"{player.name}'s hand: {[str(card) for card in player.cards]}")
-                print(f"{player.name}'s hand rank: {hand_rank.name}")
-            
-            player_hands.sort(key=lambda x: (x[1][0].value, x[1][1]), reverse=True)
-            winner = player_hands[0][0]
-            winner.stack += self.pot
-            winning_hand = player_hands[0][1][0].name.replace('_', ' ').title()
-            self.winner_info = f"{winner.name} wins ${self.pot} with {winning_hand}"
-            print(f"Winner at showdown: {winner.name}")
-            print(f"Winning hand: {winning_hand}")
-            print(f"Winning amount: ${self.pot}")
+            winner_names = ", ".join(w.name for w in winners)
+            winner_msg = f"Split pot ({self.pot:.1f} BB) between {winner_names}"
+        
+        winning_hand = player_hands[0][1][0].name.replace('_', ' ').title()
+        self.winner_info = f"{winner_msg} with {winning_hand}"
         
         # Set the winner display start time
         self.winner_display_start = pygame.time.get_ticks()
@@ -1136,31 +1138,93 @@ class PokerGame:
 
     def manual_run(self):
         """
-        Main game loop.
-        Handles game flow, player turns, and updates display.
+        Main game loop for manual play.
+        Follows the same logic as training mode but with human input.
         """
-        self.deal_cards()  # Initial deal
-        
         running = True
         while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        running = False
-                    if event.key == pygame.K_SPACE:
-                        self.reset()
-                
-                self.handle_input(event)
-                
-                # Update button hover states
-                mouse_pos = pygame.mouse.get_pos()
-                for button in self.action_buttons.values():
-                    button.is_hovered = button.rect.collidepoint(mouse_pos)
+            # Reset game state for new hand
+            self.reset()
             
-            self._draw()
-            pygame.display.flip()
+            # Continue until the hand is over
+            while not self.current_phase == GamePhase.SHOWDOWN:
+                action = None
+                penalty_reward = 0
+                
+                # Handle events and get player action
+                while action is None and running:
+                    # Get current mouse position for hover effects
+                    mouse_pos = pygame.mouse.get_pos()
+                    
+                    # Update button hover states
+                    for button in self.action_buttons.values():
+                        button.is_hovered = button.rect.collidepoint(mouse_pos)
+                    
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            running = False
+                            break
+                        if event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_ESCAPE:
+                                running = False
+                                break
+                        
+                        # Get action from button clicks
+                        if event.type == pygame.MOUSEBUTTONDOWN:
+                            if self.bet_slider.collidepoint(mouse_pos):
+                                # Calculate bet amount based on slider position
+                                slider_value = (mouse_pos[0] - self.bet_slider.x) / self.bet_slider.width
+                                current_player = self.players[self.current_player_idx]
+                                min_raise = max(self.current_bet * 2, self.big_blind * 2)
+                                max_raise = current_player.stack + current_player.current_bet
+                                bet_range = max_raise - min_raise
+                                self.current_bet_amount = min_raise + (bet_range * slider_value)
+                                self.current_bet_amount = min(max(self.current_bet_amount, min_raise), max_raise)
+                            else:
+                                # Check button clicks
+                                for act, button in self.action_buttons.items():
+                                    if button.rect.collidepoint(mouse_pos) and button.enabled:
+                                        action = act
+                                        # If it's a raise action, use the current bet amount
+                                        if action == PlayerAction.RAISE:
+                                            # Ensure bet amount is within valid range
+                                            current_player = self.players[self.current_player_idx]
+                                            min_raise = max(self.current_bet * 2, self.big_blind * 2)
+                                            max_raise = current_player.stack + current_player.current_bet
+                                            self.current_bet_amount = min(max(self.current_bet_amount, min_raise), max_raise)
+                                        break
+                
+                    # Draw current state while waiting for input
+                    self._draw()
+                    pygame.display.flip()
+                    self.clock.tick(60)
+                
+                if not running:
+                    break
+                
+                # Process the chosen action
+                if action:
+                    # Process the action with the current bet amount for raises
+                    if action == PlayerAction.RAISE:
+                        self.process_action(self.players[self.current_player_idx], action, self.current_bet_amount)
+                    else:
+                        self.process_action(self.players[self.current_player_idx], action)
+                
+                # Check if hand is over due to all but one player folding
+                active_players = sum(1 for p in self.players if p.is_active)
+                if active_players == 1:
+                    break
+                
+                # Draw updated state
+                self._draw()
+                pygame.display.flip()
+                self.clock.tick(60)
+            
+            # Show final state before starting new hand
+            if running:
+                self._draw()
+                pygame.display.flip()
+                pygame.time.wait(2000)  # Wait 2 seconds before next hand
         
         pygame.quit()
 
