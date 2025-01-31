@@ -14,7 +14,7 @@ from collections import deque
 import threading
 
 # Hyperparameters
-EPISODES = 30000
+EPISODES = 3000
 GAMMA = 0.9985
 ALPHA = 0.003
 EPS_DECAY = 0.9998
@@ -83,8 +83,9 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         state = env.get_state()
         valid_actions = [a for a in PlayerAction if env.action_buttons[a].enabled]
         
-        # Get action from agent
-        action = current_agent.get_action(state, epsilon, valid_actions)
+        # Get action from agent and handle penalty reward
+        action, penalty_reward = current_agent.get_action(state, epsilon, valid_actions)
+        cumulative_rewards[env.current_player_idx] += penalty_reward
         
         # Take action and get next state and reward
         next_state, reward = env.step(action)
@@ -93,7 +94,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         cumulative_rewards[env.current_player_idx] += reward
         
         # Store experience
-        current_agent.remember(state, action, reward, next_state, 
+        current_agent.remember(state, action, reward + penalty_reward, next_state, 
                              env.current_phase == GamePhase.SHOWDOWN)
         
         # Stocker l'action
@@ -105,7 +106,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
             break
             
         # Handle rendering if enabled
-        if rendering :
+        if rendering and (episode % render_every == 0):
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
@@ -193,6 +194,10 @@ class TrainingVisualizer:
         self.ax1.legend()
         self.ax2.legend()
         
+        # Add a counter for file saves
+        self.save_counter = 0
+        self.save_interval = 100  # Save every 100 updates instead of every update
+        
     def update_action_distribution(self, agent_name, action):
         """Met à jour la distribution des actions pour un agent"""
         action_name = action.name if hasattr(action, 'name') else action
@@ -267,9 +272,13 @@ class TrainingVisualizer:
         # Ajuster les limites de l'axe y pour le taux de victoire
         self.ax2.set_ylim([-5, 105])
         
-        # Ajuster la mise en page et sauvegarder
-        plt.tight_layout()
-        self.fig.savefig('viz_pdf/training_progress.jpg')
+        # Increment save counter and save file less frequently
+        self.save_counter += 1
+        if self.save_counter >= self.save_interval:
+            # Ajuster la mise en page et sauvegarder
+            plt.tight_layout()
+            self.fig.savefig('viz_pdf/training_progress.jpg')
+            self.save_counter = 0
 
 # Main Training Loop
 def main_training_loop(agent_list, episodes, rendering, render_every):
@@ -306,7 +315,7 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
             for i, reward in enumerate(reward_list):
                 print(f"Agent {i+1} reward: {reward:.2f}")
 
-            # Save the trained models and plots at the end
+            # Save the trained models and final plots
             if episode == episodes - 1:
                 print("\nSaving models...")
                 for agent in agent_list:
@@ -314,10 +323,12 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
                              f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
                 print("Models saved successfully!")
                 
-                # Sauvegarder les graphiques finaux
+                # Force save the final visualization
                 plt.figure(1)
                 plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
                 plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
+                visualizer.save_counter = visualizer.save_interval  # Force an update
+                visualizer.update_plots(episode, reward_list, winning_list, actions_taken)
                 print("Visualization plots saved successfully!")
 
     except KeyboardInterrupt:

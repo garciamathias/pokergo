@@ -1095,6 +1095,10 @@ class PokerGame:
         # Évaluer la force de la main actuelle
         hand_strength = self._evaluate_hand_strength(current_player)
         
+        # Process the action in the game state
+        self.process_action(current_player, action)
+        
+        # Calculate reward based on action type
         if action == PlayerAction.RAISE or action == PlayerAction.ALL_IN:
             bet_size = self.current_bet if action == PlayerAction.RAISE else current_player.stack
             pot_odds = bet_size / (self.pot + bet_size)
@@ -1125,9 +1129,6 @@ class PokerGame:
                 reward = 0.1
             else:
                 reward = 0  # Check neutre avec une main moyenne
-        
-        # Process the action in the game state
-        self.process_action(current_player, action)
         
         # Récompenses additionnelles basées sur le résultat
         if self.current_phase == GamePhase.SHOWDOWN:
