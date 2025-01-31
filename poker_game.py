@@ -1081,75 +1081,97 @@ class PokerGame:
                         break
         state.extend(last_actions)
 
+        # 12. Win probability estimation
+        active_players = [p for p in self.players if p.is_active]
+        num_opponents = len(active_players) - 1
+        
+        if num_opponents <= 0:
+            win_prob = 1.0  # No opponents left
+        else:
+            # Get hand strength
+            hand_strength = self._evaluate_hand_strength(current_player)
+            
+            # Adjust for number of opponents (2-3)
+            win_prob = hand_strength ** num_opponents
+            
+            # Pre-flop specific adjustment (using Sklansky-Chubukov approximation)
+            if self.current_phase == GamePhase.PREFLOP:
+                # Reduce confidence in pre-flop estimates
+                win_prob *= 0.8
+        
+        state.append(win_prob)
+
         return state
 
     def step(self, action: PlayerAction) -> Tuple[List[float], float]:
         """
-        Execute une action et retourne le nouvel état et la récompense
+        Execute an action and return the new state with the calculated reward.
+        The reward is now adjusted based on the hand strength so that the agent is
+        evaluated relative to its capacity. For example, if the agent has a bad hand,
+        folding will yield a positive reward while taking aggressive actions will be penalized.
         """
         current_player = self.players[self.current_player_idx]
         initial_stack = current_player.stack
         initial_pot = self.pot
-        position_reward = 0.1 * (1 - self.current_player_idx/len(self.players))  # Récompense la position tardive
-        
-        # Évaluer la force de la main actuelle
+        position_reward = 0.1 * (1 - self.current_player_idx / len(self.players))  # Reward for later positions
+
+        # Evaluate the current hand strength (normalized between 0 and 1)
         hand_strength = self._evaluate_hand_strength(current_player)
-        
-        # Process the action in the game state
-        self.process_action(current_player, action)
-        
-        # Calculate reward based on action type
-        if action == PlayerAction.RAISE or action == PlayerAction.ALL_IN:
-            bet_size = self.current_bet if action == PlayerAction.RAISE else current_player.stack
-            pot_odds = bet_size / (self.pot + bet_size)
-            
-            if hand_strength > pot_odds:
-                reward = 0.2  # Bonne relance basée sur les cotes du pot
+
+        # New reward structure based on hand strength and chosen action
+        if action in [PlayerAction.RAISE, PlayerAction.ALL_IN]:
+            if hand_strength >= 0.7:
+                reward = 0.3  # Aggressive action rewarded when hand is strong
+            elif hand_strength >= 0.5:
+                reward = 0.1  # Moderate reward when hand is decent
             else:
-                reward = -0.2  # Mauvaise relance (bluff)
-            
+                reward = -0.3  # Aggressive play with a weak hand is penalized
+
         elif action == PlayerAction.CALL:
-            pot_odds = self.current_bet / (self.pot + self.current_bet)
-            
-            if hand_strength > pot_odds:
-                reward = 0.1  # Call correct basé sur les cotes du pot
+            if hand_strength >= 0.7:
+                reward = 0.1  # Calling when very strong is suboptimal but still acceptable
+            elif hand_strength >= 0.4:
+                reward = 0.05  # Slight reward when hand is mix of good and bad
             else:
-                reward = -0.1  # Mauvais call
-            
+                reward = -0.1  # Calling with a weak hand is discouraged
+
         elif action == PlayerAction.FOLD:
-            if hand_strength < 0.3:  # Fold avec une main faible
-                reward = 0.1
+            if hand_strength < 0.3:
+                reward = 0.3  # Good decision: fold when hand is very weak
+            elif hand_strength < 0.5:
+                reward = 0.1  # Marginally good decision for moderately weak hand
             else:
-                reward = -0.2  # Fold avec une main forte
-            
+                reward = -0.2  # Penalize folding when hand is actually strong
+
         elif action == PlayerAction.CHECK:
-            if hand_strength > 0.7:  # Check avec une main forte (slow play)
-                reward = 0.15
-            elif hand_strength < 0.3:  # Check avec une main faible
-                reward = 0.1
+            if hand_strength >= 0.7:
+                reward = 0.2  # Reward slow playing a strong hand
             else:
-                reward = 0  # Check neutre avec une main moyenne
-        
-        # Récompenses additionnelles basées sur le résultat
+                reward = 0.0  # Neutral reward if checking with a moderate or weak hand
+
+        # Additional position-based bonus or penalty
+        reward += position_reward
+
+        # Process the action in the game state (this call will update the game state)
+        self.process_action(current_player, action)
+
+        # After the state update, handle the showdown bonus/penalty
         if self.current_phase == GamePhase.SHOWDOWN:
             active_players = [p for p in self.players if p.is_active]
             if len(active_players) == 1 and active_players[0] == current_player:
-                # Gagné en faisant fold tous les autres
+                # Won by folding all others
                 stack_change = (current_player.stack - initial_stack) / self.big_blind
-                reward += 1.0 + (0.1 * stack_change)  # Bonus basé sur les gains
+                reward += 1.0 + (0.1 * stack_change)
             else:
-                # Showdown atteint - évaluer les mains
+                # Evaluate showdown hands
                 player_hands = [(p, self.evaluate_hand(p)) for p in active_players]
                 player_hands.sort(key=lambda x: (x[1][0].value, x[1][1]), reverse=True)
                 if player_hands[0][0] == current_player:
                     stack_change = (current_player.stack - initial_stack) / self.big_blind
-                    reward += 1.5 + (0.1 * stack_change)  # Bonus plus important pour gagner au showdown
+                    reward += 1.5 + (0.1 * stack_change)
                 else:
-                    reward -= 1.0  # Pénalité pour perdre au showdown
-        
-        # Ajouter la récompense de position
-        reward += position_reward
-        
+                    reward -= 1.0
+
         return self.get_state(), reward
 
     def _evaluate_hand_strength(self, player) -> float:
@@ -1206,6 +1228,10 @@ class PokerGame:
                         running = False
                     if event.key == pygame.K_SPACE:
                         self.start_new_hand()
+                    if event.key == pygame.K_r:
+                        self.reset_game()
+                    if event.key == pygame.K_s:
+                        print(self.get_state())
                 
                 self.handle_input(event)
                 

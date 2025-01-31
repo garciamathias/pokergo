@@ -16,15 +16,16 @@ import subprocess
 from visualization import TrainingVisualizer, plot_rewards, plot_winning_stats
 
 # Hyperparameters
-EPISODES = 3000
+EPISODES = 10000
 GAMMA = 0.9985
 ALPHA = 0.003
 EPS_DECAY = 0.9998
-STATE_SIZE = 31
+STATE_SIZE = 32
 RENDERING = False
 FPS = 1
 WINDOW_SIZE = 50  # Pour la moyenne mobile
 PLOT_UPDATE_INTERVAL = 10  # Mettre à jour les graphiques tous les X épisodes
+SAVE_INTERVAL = 500 # Sauvegarder les graphiques tous les X épisodes
 
 def configure_git():
     """Configure Git to use merge strategy for pulls"""
@@ -156,7 +157,7 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
     winning_history = {}
     
     # Créer le visualiseur
-    visualizer = TrainingVisualizer()
+    visualizer = TrainingVisualizer(SAVE_INTERVAL)
     
     try:
         # Créer les dossiers nécessaires

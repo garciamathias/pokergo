@@ -2,12 +2,9 @@ import matplotlib
 matplotlib.use('Agg')  # Use Agg backend that doesn't require GUI
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import List, Dict
-import seaborn as sns
-import os
 
 class TrainingVisualizer:
-    def __init__(self):
+    def __init__(self, save_interval: int = 1000):
         # Create three subplots
         self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3, 1, figsize=(12, 12))
         
@@ -64,7 +61,7 @@ class TrainingVisualizer:
         
         # Add counter for file saves
         self.save_counter = 0
-        self.save_interval = 100  # Save every 100 updates
+        self.save_interval = save_interval // 10
 
     def update_action_distribution(self, agent_name, action):
         """Update action distribution for an agent"""
