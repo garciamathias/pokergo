@@ -12,6 +12,7 @@ matplotlib.use('Agg')  # Utiliser le backend Agg qui ne nécessite pas de GUI
 import matplotlib.pyplot as plt
 from collections import deque
 import threading
+import subprocess
 
 # Hyperparameters
 EPISODES = 3000
@@ -23,6 +24,15 @@ RENDERING = False
 FPS = 1
 WINDOW_SIZE = 50  # Pour la moyenne mobile
 PLOT_UPDATE_INTERVAL = 10  # Mettre à jour les graphiques tous les X épisodes
+
+def configure_git():
+    """Configure Git to use merge strategy for pulls"""
+    try:
+        # Configure Git to use merge strategy
+        subprocess.run(['git', 'config', 'pull.rebase', 'false'], check=True)
+        print("Git configured successfully to use merge strategy")
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Could not configure Git: {e}")
 
 def set_seed(seed=42):
     rd.seed(seed)
