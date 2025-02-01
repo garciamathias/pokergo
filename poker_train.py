@@ -47,6 +47,8 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+set_seed(42)
+
 def get_state_size():
     """
     Calculate the state size for 3 players
@@ -63,7 +65,8 @@ def get_state_size():
         3 +  # activity status (3 players)
         3 +  # relative positions (3 players)
         5 +  # available actions
-        3    # last actions (3 players)
+        3 +  # last actions (3 players)
+        1    # hand strength
     )
     return state_size
 
@@ -85,7 +88,8 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
     
     # Ajouter une liste pour stocker les actions
     actions_taken = []
-    
+    hand_strengths = []  # Track hand strengths for each action
+
     # Continue until the hand is over
     while not env.current_phase == GamePhase.SHOWDOWN:
         current_player = env.players[env.current_player_idx]
@@ -94,6 +98,10 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         # Get state and valid actions
         state = env.get_state()
         valid_actions = [a for a in PlayerAction if env.action_buttons[a].enabled]
+
+        # Get current hand strength
+        strength = env._evaluate_hand_strength(current_player)
+        hand_strengths.append(strength)
         
         # Get action from agent and handle penalty reward
         action, penalty_reward = current_agent.get_action(state, epsilon, valid_actions)
@@ -127,11 +135,9 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
             pygame.display.flip()
             env.clock.tick(FPS)
     
-    # Calculate final rewards based on stack changes
+    # Calculate final rewards
     final_stacks = [player.stack for player in env.players]
     stack_changes = [(final - initial) / env.big_blind for final, initial in zip(final_stacks, initial_stacks)]
-    
-    # Combine stack changes with cumulative rewards
     final_rewards = [r + s for r, s in zip(cumulative_rewards, stack_changes)]
     
     # Calculate winners (players with highest reward are winners)
@@ -148,7 +154,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         pygame.display.flip()
         pygame.time.wait(1000)
 
-    return final_rewards, winning_list, actions_taken
+    return final_rewards, winning_list, actions_taken, hand_strengths
 
 # Main Training Loop
 def main_training_loop(agent_list, episodes, rendering, render_every):
@@ -156,28 +162,25 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
     rewards_history = {}
     winning_history = {}
     
-    # Créer le visualiseur
+    # Create the visualizer
     visualizer = TrainingVisualizer(SAVE_INTERVAL)
     
     try:
-        # Créer les dossiers nécessaires
-        if not os.path.exists('saved_models'):
-            os.makedirs('saved_models')
-        if not os.path.exists('viz_pdf'):
-            os.makedirs('viz_pdf')
-            
         for episode in range(episodes):
             epsilon = np.clip(0.5 * EPS_DECAY ** episode, 0.01, 0.5)
             
-            reward_list, winning_list, actions_taken = run_episode(agent_list, epsilon, rendering, episode, render_every)
+            # Run episode and get results
+            reward_list, winning_list, actions_taken, hand_strengths = run_episode(
+                agent_list, epsilon, rendering, episode, render_every
+            )
             
             # Update histories
             rewards_history = update_rewards_history(rewards_history, reward_list, agent_list)
             winning_history = update_winning_history(winning_history, winning_list, agent_list)
             
-            # Mettre à jour les graphiques tous les X épisodes
+            # Update visualizer
             if episode % PLOT_UPDATE_INTERVAL == 0:
-                visualizer.update_plots(episode, reward_list, winning_list, actions_taken)
+                visualizer.update_plots(episode, reward_list, winning_list, actions_taken, hand_strengths)
             
             # Print episode information
             print(f"\nEpisode [{episode + 1}/{episodes}]")
@@ -185,25 +188,21 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
             for i, reward in enumerate(reward_list):
                 print(f"Agent {i+1} reward: {reward:.2f}")
 
-            # Save the trained models and final plots
-            if episode == episodes - 1:
-                print("\nSaving models...")
-                for agent in agent_list:
-                    torch.save(agent.model.state_dict(), 
-                             f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
-                print("Models saved successfully!")
-                
-                # Force save the final visualization
-                plt.figure(1)
-                plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
-                plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
-                visualizer.save_counter = visualizer.save_interval  # Force an update
-                visualizer.update_plots(episode, reward_list, winning_list, actions_taken)
-                print("Visualization plots saved successfully!")
+        # Save the trained models and final plots
+        if episode == episodes - 1:
+            print("\nSaving models...")
+            for agent in agent_list:
+                torch.save(agent.model.state_dict(), 
+                         f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
+            print("Models saved successfully!")
+            visualizer.save_counter = visualizer.save_interval  # Force an update
+            visualizer.update_plots(episode, reward_list, winning_list, actions_taken, hand_strengths)
+            plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
+            plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
+            print("Visualization plots saved successfully!")
 
     except KeyboardInterrupt:
         print("\nTraining interrupted by user")
-        # Sauvegarder les graphiques même en cas d'interruption
         plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
         plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
         print("Visualization plots saved successfully!")
