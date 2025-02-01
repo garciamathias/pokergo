@@ -23,8 +23,9 @@ EPS_DECAY = 0.9998
 STATE_SIZE = 32
 RENDERING = False
 FPS = 1
-WINDOW_SIZE = 50  # Pour la moyenne mobile
-PLOT_UPDATE_INTERVAL = 10  # Mettre à jour les graphiques tous les X épisodes
+
+WINDOW_SIZE = 50  
+PLOT_UPDATE_INTERVAL = 10  
 SAVE_INTERVAL = 500 # Sauvegarder les graphiques tous les X épisodes
 
 def configure_git():
@@ -72,83 +73,82 @@ def get_state_size():
 
 # Function to run a single episode
 def run_episode(agent_list, epsilon, rendering, episode, render_every):
-    """
-    Run a single episode of the poker game.
-    
-    Returns:
-        tuple: (reward_list, winning_list, actions_taken) containing final rewards, win status, and actions taken
-    """
+    # Initialiser l'environnement de jeu
     env = PokerGame()
     env.reset()
     
-    # Track cumulative rewards for each player
+    # Initialiser les récompenses cumulatives pour chaque joueur
     cumulative_rewards = [0] * len(agent_list)
-    # Store initial stacks for reward calculation
+    # Stocker les stacks initiaux pour calculer les changements à la fin
     initial_stacks = [player.stack for player in env.players]
-    
-    # Ajouter une liste pour stocker les actions
+    # Listes pour stocker les actions prises et les forces des mains
     actions_taken = []
-    hand_strengths = []  # Track hand strengths for each action
+    hand_strengths = [] 
 
-    # Continue until the hand is over
+    # Boucle principale du jeu jusqu'à ce que la phase de showdown soit atteinte
     while not env.current_phase == GamePhase.SHOWDOWN:
+        # Récupérer le joueur actuel et l'agent correspondant
         current_player = env.players[env.current_player_idx]
         current_agent = agent_list[env.current_player_idx]
         
-        # Get state and valid actions
+        # Obtenir l'état actuel du jeu et les actions valides
         state = env.get_state()
         valid_actions = [a for a in PlayerAction if env.action_buttons[a].enabled]
 
-        # Get current hand strength
+        # Calculer la force de la main actuelle
         strength = env._evaluate_hand_strength(current_player)
         hand_strengths.append(strength)
         
-        # Get action from agent and handle penalty reward
-        action, penalty_reward = current_agent.get_action(state, epsilon, valid_actions)
+        # Obtenir l'action choisie par l'agent et la pénalité associée (si l'agent choisit une action invalide, action_chosen est choisie aléatoirement parmi les actions valides et recevra une pénalité)
+        action_chosen, penalty_reward = current_agent.get_action(state, epsilon, valid_actions)
         cumulative_rewards[env.current_player_idx] += penalty_reward
         
-        # Take action and get next state and reward
-        next_state, reward = env.step(action)
-        
-        # Update cumulative rewards
+        # Exécuter l'action et obtenir le nouvel état et la récompense
+        next_state, reward = env.step(action_chosen)
         cumulative_rewards[env.current_player_idx] += reward
         
-        # Store experience
-        current_agent.remember(state, action, reward + penalty_reward, next_state, 
+        # Stocker l'expérience dans la mémoire de l'agent
+        current_agent.remember(state, action_chosen, reward + penalty_reward, next_state, 
                              env.current_phase == GamePhase.SHOWDOWN)
+        actions_taken.append(action_chosen)
         
-        # Stocker l'action
-        actions_taken.append(action)
-        
-        # If all players have folded except one, end the episode
+        # Vérifier si un seul joueur est actif (les autres ont abandonné)
         active_players = sum(1 for p in env.players if p.is_active)
         if active_players == 1:
             break
             
-        # Handle rendering if enabled
+        # Gérer l'affichage si le rendering est activé
         if rendering and (episode % render_every == 0):
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    return cumulative_rewards, [0] * len(agent_list), []
             env._draw()
             pygame.display.flip()
             env.clock.tick(FPS)
     
-    # Calculate final rewards
+    # Calculer les récompenses finales en fonction des changements de stack et du statut de victoire
     final_stacks = [player.stack for player in env.players]
     stack_changes = [(final - initial) / env.big_blind for final, initial in zip(final_stacks, initial_stacks)]
+    
+    # Déterminer les gagnants (joueurs avec le stack le plus élevé)
+    max_stack = max(final_stacks)
+    winning_list = [1 if stack == max_stack else 0 for stack in final_stacks]
     final_rewards = [r + s for r, s in zip(cumulative_rewards, stack_changes)]
     
-    # Calculate winners (players with highest reward are winners)
-    max_reward = max(final_rewards)
-    winning_list = [1 if reward == max_reward else 0 for reward in final_rewards]
+    # Ajouter l'état terminal et la récompense finale pour chaque joueur
+    for i, agent in enumerate(agent_list):
+        env.current_player_idx = i
+        terminal_state = env.get_state()
+        is_winner = winning_list[i]
+        # Attribuer une récompense finale basée sur la victoire/défaite et le changement de stack
+        final_reward = 5.0 if is_winner else -2.5
+        final_reward += stack_changes[i]  # Inclure l'impact du changement de stack
+        agent.remember(terminal_state, None, final_reward, None, True)
+
+    print("final_rewards: ", final_rewards)
     
-    # Train all agents
+    # Entraîner tous les agents avec les expériences mises à jour
     for agent in agent_list:
         agent.train_model()
     
-    # Show final state if rendering
+    # Afficher l'état final si le rendu est activé
     if rendering and (episode % render_every == 0):
         env._draw()
         pygame.display.flip()
@@ -167,6 +167,7 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
     
     try:
         for episode in range(episodes):
+            # Decay epsilon
             epsilon = np.clip(0.5 * EPS_DECAY ** episode, 0.01, 0.5)
             
             # Run episode and get results

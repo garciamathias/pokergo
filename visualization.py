@@ -14,7 +14,7 @@ class TrainingVisualizer:
         self.ax1.set_title('Average Reward per Agent')
         self.ax2.set_title('Win Rate per Agent')
         self.ax3.set_title('Action Distribution per Agent')
-        self.ax4.set_title('Hand Strength Analysis')
+        self.ax4.set_title('Hand Strength vs Win Rate Correlation')
         
         # Initialize data
         self.window_size = 50
@@ -23,7 +23,7 @@ class TrainingVisualizer:
         self.action_data = {f"Agent {i+1}": {
             'FOLD': [], 'CHECK': [], 'CALL': [], 'RAISE': [], 'ALL_IN': []
         } for i in range(3)}
-        self.hand_strength_data = {f"Agent {i+1}": {'strength': [], 'action': []} for i in range(3)}
+        self.hand_strength_data = {f"Agent {i+1}": {'strength': [], 'win': []} for i in range(3)}
         self.episodes = []
         
         # Colors for agents and actions
@@ -43,8 +43,8 @@ class TrainingVisualizer:
         self.ax2.set_ylabel('Win Rate (%)')
         self.ax3.set_xlabel('Episodes')
         self.ax3.set_ylabel('Action Distribution (%)')
-        self.ax4.set_xlabel('Hand Strength')
-        self.ax4.set_ylabel('Action Tendency')
+        self.ax4.set_xlabel('Episodes')
+        self.ax4.set_ylabel('Win Rate Correlation')
         
         # Add grids
         for ax in [self.ax1, self.ax2, self.ax3, self.ax4]:
@@ -74,10 +74,10 @@ class TrainingVisualizer:
         for act in self.action_data[agent_name].keys():
             self.action_data[agent_name][act].append(1 if act == action_name else 0)
 
-    def update_hand_strength_data(self, agent_name, strength, action):
-        """Update hand strength and action data"""
+    def update_hand_strength_data(self, agent_name, strength, win_status):
+        """Update hand strength and win data"""
         self.hand_strength_data[agent_name]['strength'].append(strength)
-        self.hand_strength_data[agent_name]['action'].append(action.name)
+        self.hand_strength_data[agent_name]['win'].append(1 if win_status else 0)
 
     def plot_action_distribution(self):
         """Plot action distribution for each agent"""
@@ -112,66 +112,66 @@ class TrainingVisualizer:
         self.ax3.set_ylim(0, 100)
 
     def plot_hand_strength_analysis(self):
-        """Plot hand strength correlation with actions"""
+        """Plot hand strength correlation with wins"""
         self.ax4.clear()
-        action_mapping = {
-            'FOLD': 0,
-            'CHECK': 1,
-            'CALL': 2,
-            'RAISE': 3,
-            'ALL_IN': 4
-        }
+        self.ax4.set_title('Hand Strength vs Win Rate Correlation')
         
-        # Use the same colors as defined in __init__
         for i, (agent_name, color) in enumerate(zip(self.hand_strength_data.keys(), self.colors)):
             strengths = self.hand_strength_data[agent_name]['strength']
-            actions = [action_mapping[a] for a in self.hand_strength_data[agent_name]['action']]
+            wins = self.hand_strength_data[agent_name]['win']
             
-            if len(strengths) > 0 and len(actions) > 0:
-                # Calculate rolling correlation with error handling
+            if len(strengths) > 0 and len(wins) > 0:
                 correlations = []
                 for j in range(len(strengths)):
                     start = max(0, j - self.window_size)
                     end = j + 1
                     
-                    # Ensure we have enough data points and variance
                     window_strengths = strengths[start:end]
-                    window_actions = actions[start:end]
+                    window_wins = wins[start:end]
                     
-                    if len(window_strengths) > 1 and len(set(window_strengths)) > 1 and len(set(window_actions)) > 1:
+                    # Check if we have enough variance in both arrays
+                    if (len(window_strengths) > 1 and 
+                        len(set(window_strengths)) > 1 and 
+                        len(set(window_wins)) > 1):
                         try:
-                            corr = np.corrcoef(window_strengths, window_actions)[0,1]
-                            correlations.append(corr if not np.isnan(corr) else 0)
+                            # Suppress numpy warnings during correlation calculation
+                            with np.errstate(divide='ignore', invalid='ignore'):
+                                corr = np.corrcoef(window_strengths, window_wins)[0,1]
+                            # Check if correlation is valid
+                            if corr is not None and not np.isnan(corr):
+                                correlations.append(corr)
+                            else:
+                                correlations.append(0)
                         except Exception:
                             correlations.append(0)
                     else:
                         correlations.append(0)
                 
-                # Only plot if we have valid correlations
                 if correlations:
-                    # Use consistent color from self.colors
                     self.ax4.plot(self.episodes[-len(correlations):], correlations, 
-                                label=agent_name, color=self.colors[i])
+                                label=agent_name, color=color)
         
-        self.ax4.set_title('Hand Strength-Action Correlation')
-        self.ax4.set_xlabel('Episodes')
-        self.ax4.set_ylabel('Correlation Coefficient')
         self.ax4.legend()
         self.ax4.grid(True)
         self.ax4.set_ylim(-1, 1)
+        self.ax4.axhline(0, color='gray', linestyle='--')
 
     def update_plots(self, episode, rewards, wins, actions, hand_strengths):
         """Update all plots with new data"""
-        # Update data
         self.episodes.append(episode)
         
         # Update rewards and wins
         for i, agent_name in enumerate(self.rewards_data.keys()):
             self.rewards_data[agent_name].append(rewards[i])
             self.wins_data[agent_name].append(wins[i])
+            
+            # Update action distribution if actions are provided
             if actions and i < len(actions):
                 self.update_action_distribution(agent_name, actions[i])
-                self.update_hand_strength_data(agent_name, hand_strengths[i], actions[i])
+            
+            # Update hand strength data with win status
+            if hand_strengths and i < len(hand_strengths):
+                self.update_hand_strength_data(agent_name, hand_strengths[i], wins[i])
             
             # Calculate moving average of rewards
             if len(self.rewards_data[agent_name]) >= self.window_size:

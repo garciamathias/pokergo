@@ -50,7 +50,7 @@ class PokerAgent:
             1: PlayerAction.CALL,
             2: PlayerAction.FOLD,
             3: PlayerAction.RAISE,
-            4: PlayerAction.ALL_IN
+            4: PlayerAction.ALL_IN,
         }
         
         # Create reverse map for masking
@@ -91,9 +91,10 @@ class PokerAgent:
             PlayerAction.CALL: 1,
             PlayerAction.FOLD: 2,
             PlayerAction.RAISE: 3,
-            PlayerAction.ALL_IN: 4
+            PlayerAction.ALL_IN: 4,
+            None: 0 # Special key for terminal state (cannot be 5 because of index error with tensors)
         }
-        numerical_action = action_map[action]
+        numerical_action = action_map[action] if action is not None else action_map[None]
         self.memory.append((state, numerical_action, reward, next_state, done))
 
     def train_model(self):
@@ -105,9 +106,14 @@ class PokerAgent:
 
         states = torch.FloatTensor(states).to(device)
         actions = torch.LongTensor(actions).to(device)
-        next_states = torch.FloatTensor(next_states).to(device)
         rewards = torch.FloatTensor(rewards).to(device)
         dones = torch.FloatTensor(dones).to(device)
+
+        # Handle terminal states (next_states is None)
+        next_states_tensor = torch.zeros_like(states).to(device)  # Placeholder for terminal states
+        for i, next_state in enumerate(next_states):
+            if next_state is not None:
+                next_states_tensor[i] = torch.FloatTensor(next_state).to(device)
 
         # Get current policy and value predictions
         action_probs, state_values = self.model(states)
@@ -115,7 +121,7 @@ class PokerAgent:
 
         # Compute next state values
         with torch.no_grad():
-            _, next_state_values = self.model(next_states)
+            _, next_state_values = self.model(next_states_tensor)
             next_state_values = next_state_values.squeeze(-1)
 
         # Compute TD targets
