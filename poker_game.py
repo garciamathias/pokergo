@@ -4,6 +4,8 @@ from enum import Enum
 from typing import List, Dict, Optional, Tuple
 import pygame.font
 from collections import Counter
+import torch
+import time
 
 class Card:
     """
@@ -205,6 +207,9 @@ class PokerGame:
         # Add winner display timing
         self.winner_display_start = 0
         self.winner_display_duration = 5000  # 5 seconds in milliseconds
+
+        # Add last AI action time
+        self.last_ai_action_time = 0
         
         self.start_new_hand()
 
@@ -229,7 +234,7 @@ class PokerGame:
             player.current_bet = 0
             player.is_active = True
             player.has_acted = False
-            player.stack = 200 * self.big_blind  # Reset to starting stack
+            player.stack = 500  # Reset to starting stack
         
         # Reset button and blinds
         self.button_position = (self.button_position + 1) % self.num_players
@@ -1243,6 +1248,76 @@ class PokerGame:
             self._draw()
             pygame.display.flip()
         
+        pygame.quit()
+
+    def run_mixed_game(self, agent_list):
+        """
+        Run the game loop with a mix of human and AI players
+        Args:
+            agent_list: List of agents/human players (None for human, agent for AI)
+        """
+        self.reset()
+        running = True
+        ai_action_delay = 1000  # Delay AI actions by 1 second for observability
+
+        for player in self.players:
+            print(player.name, player.stack)
+
+        while running:
+            current_time = pygame.time.get_ticks()
+            current_player = self.players[self.current_player_idx]
+
+            # Handle events for human players
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                
+                # Human player input handling
+                if current_player.is_human:
+                    self.handle_input(event)
+
+            # AI player logic
+            if not current_player.is_human and self.current_phase != GamePhase.SHOWDOWN:
+                # Get corresponding agent (adjust for 0-based index)
+                agent = agent_list[self.current_player_idx]
+                if agent and current_player.is_active:
+                    # Get current state and select action
+                    state = self.get_state()
+
+                    # Get valid actions
+                    valid_actions = [action for action in PlayerAction if self.action_buttons[action].enabled]
+                    
+                    # Get AI action with exploration
+                    action, _  = agent.get_action(state, epsilon=0.01, valid_actions=valid_actions)
+                    
+                    # For raise actions, calculate appropriate bet size
+                    bet_amount = None
+                    if action == PlayerAction.RAISE:
+                        min_raise = max(self.current_bet * 2, self.big_blind * 2)
+                        max_raise = current_player.stack + current_player.current_bet
+                        bet_amount = min_raise# min(max_raise, max(min_raise, int(max_raise * 0.5)))  # Standard 50% pot raise
+                    
+                    # Process AI action after delay
+                    if current_time - self.last_ai_action_time > ai_action_delay:
+                        self.process_action(current_player, action, bet_amount)
+                        self.last_ai_action_time = current_time
+
+            # Update display
+            self._draw()
+            pygame.display.flip()
+            self.clock.tick(30)
+
+            # Pause the game, to see the AI play
+            time.sleep(1)
+
+            # Handle automatic showdown resolution
+            if self.current_phase == GamePhase.SHOWDOWN:
+                if current_time - self.winner_display_start > self.winner_display_duration:
+                    self.reset()
+
         pygame.quit()
 
     def update_blinds(self):

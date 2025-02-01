@@ -11,11 +11,11 @@ def main():
     # Initialize game
     game = PokerGame()
     
-    # Create and load AI agents for players 2-6
+    # Create and load AI agents for players 2-3
     agent_list = [None] 
-    for i in range(2, 7):
+    for i in [2,3]:
         agent = PokerAgent(
-            state_size=46,
+            state_size=32,
             action_size=5,
             gamma=0.9985,
             learning_rate=0.003,
@@ -27,7 +27,7 @@ def main():
     
     # Set player 1 (index 0) as human, others as AI
     game.players[0].is_human = True
-    for i in range(1, 6):
+    for i in [1,2]:
         game.players[i].is_human = False
     
     # Run the game loop with mixed human/AI players
@@ -35,8 +35,6 @@ def main():
         game.run_mixed_game(agent_list)
     except KeyboardInterrupt:
         print("\nGame interrupted by user")
-    except Exception as e:
-        print(f"\nError occurred: {e}")
     finally:
         pygame.quit()
         print("Game ended")
