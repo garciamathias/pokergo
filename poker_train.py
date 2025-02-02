@@ -144,17 +144,19 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
 
     print("final_rewards: ", final_rewards)
     
-    # Entraîner tous les agents avec les expériences mises à jour
+    # Train agents and collect metrics
+    metrics_list = []
     for agent in agent_list:
-        agent.train_model()
-    
+        metrics = agent.train_model()
+        metrics_list.append(metrics)
+
     # Afficher l'état final si le rendu est activé
     if rendering and (episode % render_every == 0):
         env._draw()
         pygame.display.flip()
         pygame.time.wait(1000)
 
-    return final_rewards, winning_list, actions_taken, hand_strengths
+    return final_rewards, winning_list, actions_taken, hand_strengths, metrics_list
 
 # Main Training Loop
 def main_training_loop(agent_list, episodes, rendering, render_every):
@@ -170,8 +172,8 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
             # Decay epsilon
             epsilon = np.clip(0.5 * EPS_DECAY ** episode, 0.01, 0.5)
             
-            # Run episode and get results
-            reward_list, winning_list, actions_taken, hand_strengths = run_episode(
+            # Run episode and get results including metrics
+            reward_list, winning_list, actions_taken, hand_strengths, metrics_list = run_episode(
                 agent_list, epsilon, rendering, episode, render_every
             )
             
@@ -179,9 +181,10 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
             rewards_history = update_rewards_history(rewards_history, reward_list, agent_list)
             winning_history = update_winning_history(winning_history, winning_list, agent_list)
             
-            # Update visualizer
+            # Update visualizer with all data including metrics
             if episode % PLOT_UPDATE_INTERVAL == 0:
-                visualizer.update_plots(episode, reward_list, winning_list, actions_taken, hand_strengths)
+                visualizer.update_plots(episode, reward_list, winning_list, 
+                                     actions_taken, hand_strengths, metrics_list)
             
             # Print episode information
             print(f"\nEpisode [{episode + 1}/{episodes}]")
@@ -197,7 +200,7 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
                          f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
             print("Models saved successfully!")
             visualizer.save_counter = visualizer.save_interval  # Force an update
-            visualizer.update_plots(episode, reward_list, winning_list, actions_taken, hand_strengths)
+            visualizer.update_plots(episode, reward_list, winning_list, actions_taken, hand_strengths, metrics_list)
             plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
             plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
             print("Visualization plots saved successfully!")

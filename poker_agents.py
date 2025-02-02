@@ -6,6 +6,7 @@ from poker_model import ActorCriticModel
 from poker_game import PlayerAction
 from collections import namedtuple, deque
 import random
+import numpy as np
 
 device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
 device = 'cpu'  # Uncomment to force CPU
@@ -26,6 +27,8 @@ class PokerAgent:
         self.load_model = load_model
         if self.load_model:
             self.load(load_path)
+
+        self.old_action_probs = None  # For tracking KL divergence
 
     def load(self, load_path):
         self.model.load_state_dict(torch.load(load_path))
@@ -99,7 +102,7 @@ class PokerAgent:
 
     def train_model(self):
         if len(self.memory) < 128:  # Minimum batch size
-            return
+            return None
 
         batch = random.sample(self.memory, 128)
         states, actions, rewards, next_states, dones = zip(*batch)
@@ -118,6 +121,14 @@ class PokerAgent:
         # Get current policy and value predictions
         action_probs, state_values = self.model(states)
         state_values = state_values.squeeze(-1)
+
+        # Calculate KL divergence if we have old probabilities
+        approx_kl = 0
+        if self.old_action_probs is not None:
+            approx_kl = torch.mean(
+                torch.sum(self.old_action_probs * torch.log(self.old_action_probs / (action_probs + 1e-10)), dim=1)
+            ).item()
+        self.old_action_probs = action_probs.detach()
 
         # Compute next state values
         with torch.no_grad():
@@ -141,8 +152,22 @@ class PokerAgent:
         # Total loss
         total_loss = policy_loss + self.value_loss_coeff * value_loss - self.entropy_coeff * entropy_loss
 
+        # Compute standard deviation of advantages
+        advantages_std = advantages.std().item()
+
         # Backpropagation
         self.optimizer.zero_grad()
         total_loss.backward()
         nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optimizer.step()
+
+        # Return metrics
+        metrics = {
+            'approx_kl': approx_kl,
+            'entropy_loss': entropy_loss.item(),
+            'value_loss': value_loss.item(),
+            'std': advantages_std,
+            'learning_rate': self.learning_rate,
+            'loss': total_loss.item()
+        }
+        return metrics

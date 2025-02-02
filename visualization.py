@@ -10,6 +10,10 @@ class TrainingVisualizer:
         # Create subplots
         self.fig, ((self.ax1, self.ax2), (self.ax3, self.ax4)) = plt.subplots(2, 2, figsize=(16, 12))
         
+        # Create new figure for metrics
+        self.metrics_fig, self.metrics_axs = plt.subplots(3, 2, figsize=(15, 12))
+        self.metrics_axs = self.metrics_axs.flatten()
+        
         # Configure plots
         self.ax1.set_title('Average Reward per Agent')
         self.ax2.set_title('Win Rate per Agent')
@@ -63,6 +67,18 @@ class TrainingVisualizer:
         
         self.ax1.legend()
         self.ax2.legend()
+        
+        # Initialize metrics tracking
+        self.metrics_history = defaultdict(lambda: defaultdict(list))
+        self.episodes_history = []
+        
+        # Configure metrics axes
+        metric_titles = ['Approx KL', 'Entropy Loss', 'Value Loss', 
+                        'Advantage STD', 'Learning Rate', 'Total Loss']
+        for ax, title in zip(self.metrics_axs, metric_titles):
+            ax.set_title(title)
+            ax.grid(True)
+            ax.set_xlabel('Episodes')
         
         # Add counter for file saves
         self.save_counter = 0
@@ -156,7 +172,48 @@ class TrainingVisualizer:
         self.ax4.set_ylim(-1, 1)
         self.ax4.axhline(0, color='gray', linestyle='--')
 
-    def update_plots(self, episode, rewards, wins, actions, hand_strengths):
+    def update_metrics(self, episode, metrics_list):
+        """Update training metrics history"""
+        self.episodes_history.append(episode)
+        
+        for i, metrics in enumerate(metrics_list):
+            if metrics is not None:
+                agent_name = f"Agent {i+1}"
+                for metric_name, value in metrics.items():
+                    self.metrics_history[agent_name][metric_name].append(value)
+
+    def plot_metrics(self):
+        """Plot training metrics"""
+        metric_keys = ['approx_kl', 'entropy_loss', 'value_loss', 
+                      'std', 'learning_rate', 'loss']
+        
+        for ax, metric_key in zip(self.metrics_axs, metric_keys):
+            ax.clear()
+            ax.set_title(metric_key.replace('_', ' ').title())
+            ax.grid(True)
+            
+            for agent_name, metrics in self.metrics_history.items():
+                if metric_key in metrics:
+                    values = metrics[metric_key]
+                    if len(values) > 0:
+                        # Calculate moving average
+                        window = min(50, len(values))
+                        smoothed_values = np.convolve(values, 
+                                                    np.ones(window)/window, 
+                                                    mode='valid')
+                        episodes = self.episodes_history[-len(smoothed_values):]
+                        
+                        color = self.colors[int(agent_name[-1])-1]
+                        ax.plot(episodes, smoothed_values, 
+                               label=agent_name, color=color)
+            
+            ax.legend()
+            ax.set_xlabel('Episodes')
+        
+        plt.tight_layout()
+        self.metrics_fig.savefig('viz_pdf/training_metrics.jpg')
+
+    def update_plots(self, episode, rewards, wins, actions, hand_strengths, metrics_list=None):
         """Update all plots with new data"""
         self.episodes.append(episode)
         
@@ -201,11 +258,16 @@ class TrainingVisualizer:
         # Adjust y-axis limits for win rate
         self.ax2.set_ylim([-5, 105])
         
-        # Save file less frequently
+        # Update and plot metrics if provided
+        if metrics_list is not None:
+            self.update_metrics(episode, metrics_list)
+        
+        # Save plots at intervals
         self.save_counter += 1
         if self.save_counter >= self.save_interval:
             plt.tight_layout()
             self.fig.savefig('viz_pdf/training_progress.jpg')
+            self.plot_metrics()
             self.save_counter = 0
 
 def plot_rewards(rewards_history: dict, window_size: int = 50, save_path: str = "viz_pdf/poker_rewards.jpg"):
