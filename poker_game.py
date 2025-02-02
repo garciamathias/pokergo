@@ -695,7 +695,7 @@ class PokerGame:
         """
         players = []
         for i in range(self.num_players):
-            player = Player(f"Player {i+1}", self.starting_stack, i)
+            player = Player(f"Player_{i+1}", self.starting_stack, i)
             players.append(player)
         return players
     
@@ -1006,7 +1006,7 @@ class PokerGame:
         # 1. Cards information (normalized values 2-14 -> 0-1)
         # Player's cards
         for card in current_player.cards:
-            state.append((card.value - 2) / 12)  # Normalize card values
+            state.append((card.value - 2) / 12)  # Normalize card values (size = 2)
         
         # Community cards
         flop = [-1] * 3
@@ -1024,7 +1024,7 @@ class PokerGame:
         # 2. Current hand rank (if enough cards are visible)
         if len(current_player.cards) + len(self.community_cards) >= 5:
             hand_rank, _ = self.evaluate_hand(current_player)
-            state.append(hand_rank.value / len(HandRank))  # Normalize rank value
+            state.append(hand_rank.value / len(HandRank))  # Normalize rank value (size = 1)
         else:
             state.append(-1)  # No hand rank available yet
 
@@ -1036,33 +1036,33 @@ class PokerGame:
             GamePhase.RIVER: 0.75,
             GamePhase.SHOWDOWN: 1
         }
-        state.append(phase_values[self.current_phase])
+        state.append(phase_values[self.current_phase])  # Normalize phase value (size = 1)
 
         # 4. Round number
-        state.append(self.round_number)
+        state.append(self.round_number)  # Normalize round number (size = 1)
 
         # 5. Current bet normalized by big blind
-        state.append(self.current_bet / self.big_blind)
+        state.append(self.current_bet / self.big_blind)  # Normalize bet (size = 1)
 
         # 6. Money left (stack sizes normalized by initial stack)
         initial_stack = 200 * self.big_blind
         for player in self.players:
-            state.append(player.stack / initial_stack)
+            state.append(player.stack / initial_stack) # (size = 3)
 
         # 7. Bets information (normalized by big blind)
         for player in self.players:
-            state.append(player.current_bet / self.big_blind)
+            state.append(player.current_bet / self.big_blind) # (size = 3)
 
         # 8. Activity information (extreme binary: active/folded)
         for player in self.players:
-            state.append(1 if player.is_active else -1)
+            state.append(1 if player.is_active else -1) # (size = 3)
 
         # 9. Position information (one-hot encoded relative positions)
         relative_positions = [0.1] * self.num_players
         for i in range(self.num_players):
             relative_pos = (i - self.current_player_idx) % self.num_players
             relative_positions[relative_pos] = 1
-        state.extend(relative_positions)
+        state.extend(relative_positions) # (size = 3)
 
         # 10. Available actions (extreme binary: available/unavailable)
         action_availability = []
@@ -1071,7 +1071,7 @@ class PokerGame:
                 action_availability.append(1)
             else:
                 action_availability.append(-1)
-        state.extend(action_availability)
+        state.extend(action_availability) # (size = 3)
 
         # 11. Previous actions (last action of each player, encoded)
         action_encoding = {
@@ -1092,7 +1092,7 @@ class PokerGame:
                     if action_type.value in action:
                         last_actions[player_idx] = action_encoding[action_type]
                         
-        state.extend(last_actions)
+        state.extend(last_actions) # (size = 3) 
 
         # 12. Win probability estimation
         active_players = [p for p in self.players if p.is_active]
@@ -1112,7 +1112,15 @@ class PokerGame:
                 # Reduce confidence in pre-flop estimates
                 win_prob *= 0.8
         
-        state.append(win_prob)
+        state.append(win_prob) # (size = 1)
+
+        # 13. Pot odds
+        call_amount = self.current_bet - current_player.current_bet
+        pot_odds = call_amount / (self.pot + call_amount) if (self.pot + call_amount) > 0 else 0
+        state.append(pot_odds) # (size = 1)
+
+        # 14. Aggression factor
+        state.append(self.number_raise_this_round / 4) # (size = 1)
 
         return state
 
@@ -1146,6 +1154,10 @@ class PokerGame:
                 
         elif action == PlayerAction.CALL:
             reward += 0.1 * min(hand_strength, 0.6)  # Diminished returns for passive play
+        
+        elif action == PlayerAction.CHECK: # Penalize check if hand is strong
+            if hand_strength > 0.8:
+                reward -= 0.5 * pot_potential
 
         elif action == PlayerAction.FOLD:
             if hand_strength < 0.4:
@@ -1247,7 +1259,24 @@ class PokerGame:
                     if event.key == pygame.K_r:
                         self.reset_game()
                     if event.key == pygame.K_s:
-                        print(self.get_state())
+                        state = self.get_state()
+                        print('--------------------------------')
+                        print(f"Player cards: {[x * 12 + 2 for x in state[0:2]]}")
+                        print(f"Community cards: {[x * 12 + 2 for x in state[2:7]]}")
+                        print(f"Hand rank: {state[7]}")
+                        print(f"Game phase: {state[8]}")
+                        print(f"Round number: {state[9]}")
+                        print(f"Current bet: {state[10]}")
+                        print(f"Stack sizes: {state[11:14]}")  
+                        print(f"Current bets: {state[14:17]}")  
+                        print(f"Player activity: {state[17:20]}")  
+                        print(f"Relative positions: {state[20:23]}")  
+                        print(f"Available actions: {state[23:28]}")
+                        print(f"Previous actions: {state[28:31]}")  
+                        print(f"Win probability: {state[31]}")
+                        print(f"Pot odds: {state[32]}")
+                        print(f"Aggression factor: {state[33]}")
+                        print('--------------------------------')
                 
                 self.handle_input(event)
                 

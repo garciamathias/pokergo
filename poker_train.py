@@ -13,14 +13,14 @@ import matplotlib.pyplot as plt
 from collections import deque
 import threading
 import subprocess
-from visualization import TrainingVisualizer, plot_rewards, plot_winning_stats
+from visualization import TrainingVisualizer, plot_winning_stats
 
 # Hyperparameters
 EPISODES = 10000
 GAMMA = 0.9985
 ALPHA = 0.003
 EPS_DECAY = 0.9998
-STATE_SIZE = 32
+STATE_SIZE = 34
 RENDERING = False
 FPS = 1
 
@@ -38,8 +38,6 @@ def set_seed(seed=42):
     
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
-set_seed(43)
 
 # Function to run a single episode
 def run_episode(agent_list, epsilon, rendering, episode, render_every):
@@ -183,13 +181,11 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
             print("Models saved successfully!")
             visualizer.save_counter = visualizer.save_interval  # Force an update
             visualizer.update_plots(episode, reward_list, winning_list, actions_taken, hand_strengths, metrics_list)
-            plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
             plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
             print("Visualization plots saved successfully!")
 
     except KeyboardInterrupt:
         print("\nTraining interrupted by user")
-        plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
         plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
         print("Visualization plots saved successfully!")
 

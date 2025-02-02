@@ -285,41 +285,6 @@ class TrainingVisualizer:
             self.plot_metrics()
             self.save_counter = 0
 
-def plot_rewards(rewards_history: dict, window_size: int = 50, save_path: str = "viz_pdf/poker_rewards.jpg"):
-    """Plot evolution of average rewards for each agent"""
-    plt.figure(figsize=(10, 6))
-    colors = ['red', 'green', 'blue']
-    
-    for (agent_name, rewards), color in zip(rewards_history.items(), colors):
-        if len(rewards) >= window_size:
-            moving_avg = []
-            for i in range(len(rewards)-window_size+1):
-                # Get window of data
-                window_data = np.array(rewards[i:i+window_size])
-                
-                # Remove extreme values (0.5% from each end)
-                if len(window_data) > 4:  # Only trim if we have enough data points
-                    lower_percentile = np.percentile(window_data, 0.5)
-                    upper_percentile = np.percentile(window_data, 99.5)
-                    trimmed_data = window_data[(window_data >= lower_percentile) & 
-                                             (window_data <= upper_percentile)]
-                    avg = np.mean(trimmed_data) if len(trimmed_data) > 0 else np.mean(window_data)
-                else:
-                    avg = np.mean(window_data)
-                
-                moving_avg.append(avg)
-            
-            episodes = range(window_size-1, len(rewards))
-            plt.plot(episodes, moving_avg, label=agent_name, color=color)
-    
-    plt.title(f'Average Rewards ({window_size} episode window)')
-    plt.xlabel('Episode')
-    plt.ylabel('Average Reward')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(save_path)
-    plt.close()
-
 def plot_winning_stats(winning_history: dict, window_size: int = 50, save_path: str = "viz_pdf/poker_wins.jpg"):
     """
     Plot the total number of wins for each agent as bars.
