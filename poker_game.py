@@ -527,6 +527,13 @@ class PokerGame:
         action_text = f"{player.name}: {action.value}"
         if bet_amount is not None and action == PlayerAction.RAISE:
             action_text += f" ${bet_amount}"
+        elif action == PlayerAction.RAISE:
+            # Calculate minimum and maximum possible raise amounts
+            min_raise = max(self.current_bet * 2, self.big_blind * 2)
+            bet_amount = min_raise
+
+            action_text += f" ${bet_amount}"
+
         self.action_history.append(action_text)
         if len(self.action_history) > 10:
             self.action_history.pop(0)
@@ -1079,7 +1086,8 @@ class PokerGame:
         for action_text in reversed(self.action_history[-self.num_players:]):
             if ":" in action_text:
                 player_name, action = action_text.split(":")
-                player_idx = int(player_name.split()[-1]) - 1
+                print(f"Player name: {player_name}")
+                player_idx = int(player_name.split("_")[-1]) - 1
                 action = action.strip()
                 for action_type in PlayerAction:
                     if action_type.value in action:
