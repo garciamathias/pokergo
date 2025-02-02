@@ -39,7 +39,7 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-set_seed(42)
+set_seed(43)
 
 # Function to run a single episode
 def run_episode(agent_list, epsilon, rendering, episode, render_every):
@@ -105,7 +105,8 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
     # Déterminer les gagnants (joueurs avec le stack le plus élevé)
     max_stack = max(final_stacks)
     winning_list = [1 if stack == max_stack else 0 for stack in final_stacks]
-    final_rewards = [r + s for r, s in zip(cumulative_rewards, stack_changes)]
+    final_rewards = [r + s  for r, s in zip(cumulative_rewards, stack_changes)]
+
     
     # Ajouter l'état terminal et la récompense finale pour chaque joueur
     for i, agent in enumerate(agent_list):
@@ -113,7 +114,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         terminal_state = env.get_state()
         is_winner = winning_list[i]
         # Attribuer une récompense finale basée sur la victoire/défaite et le changement de stack
-        final_reward = 5.0 if is_winner else -2.5
+        final_reward = 50.0 if is_winner else -50
         final_reward += stack_changes[i]  # Inclure l'impact du changement de stack
         agent.remember(terminal_state, None, final_reward, None, True)
 
@@ -191,6 +192,10 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
         plot_rewards(rewards_history, window_size=50, save_path="viz_pdf/poker_rewards.jpg")
         plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
         print("Visualization plots saved successfully!")
+
+        print("\nSaving models...")
+        for agent in agent_list:
+            torch.save(agent.model.state_dict(), f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
     finally:
         if rendering:
             pygame.quit()

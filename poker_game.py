@@ -1129,37 +1129,29 @@ class PokerGame:
         call_amount_before = self.current_bet - current_player.current_bet
         pot_before = self.pot
 
-        # Evaluate hand strength (0-1)
-        hand_strength = self._evaluate_hand_strength(current_player)
-
         # --- Strategic Action Rewards ---
         # Reward based on action relative to hand strength
-        if action in [PlayerAction.RAISE, PlayerAction.ALL_IN]:
-            if hand_strength >= 0.7:
-                reward += 0.3  # Aggressive action with strong hand
-            elif hand_strength >= 0.5:
-                reward += 0.1  # Moderate strength
-            else:
-                reward -= 0.3  # Over-aggressive with weak hand
-
+        hand_strength = self._evaluate_hand_strength(current_player)
+        pot_potential = self.pot / (self.big_blind * 100)
+    
+        if action == PlayerAction.RAISE:
+            reward += 0.2 * hand_strength  # Scale reward with hand strength
+            if hand_strength > 0.7:
+                reward += 0.5 * pot_potential  # Bonus for aggressive play with strong hands
+                
+        elif action == PlayerAction.ALL_IN:
+            reward += 0.3 * hand_strength
+            if hand_strength > 0.8:
+                reward += 1.0 * pot_potential
+                
         elif action == PlayerAction.CALL:
-            if hand_strength >= 0.7:
-                reward += 0.1  # Should consider raising instead
-            elif hand_strength >= 0.4:
-                reward += 0.05  # Neutral
-            else:
-                reward -= 0.1  # Poor call with weak hand
+            reward += 0.1 * min(hand_strength, 0.6)  # Diminished returns for passive play
 
         elif action == PlayerAction.FOLD:
-            if hand_strength < 0.3:
-                reward += 0.3  # Good fold
-            elif hand_strength < 0.5:
-                reward += 0.1  # Reasonable fold
+            if hand_strength < 0.4:
+                reward += 0.3  # Reward good folds
             else:
-                reward -= 0.2  # Bad fold with strong hand
-
-        elif action == PlayerAction.CHECK and hand_strength >= 0.7:
-            reward += 0.2  # Slow-playing strong hand
+                reward -= 0.5  # Penalize folding decent hands
 
         # --- Positional Bonus ---
         # Bonus for aggressive actions in late position (button)

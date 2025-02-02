@@ -1,5 +1,4 @@
 # poker_train.py
-import os
 import numpy as np
 import random as rd
 import pygame
@@ -8,12 +7,7 @@ import time
 from poker_agents import PokerAgent
 from poker_game import PokerGame, GamePhase, PlayerAction
 import matplotlib
-matplotlib.use('Agg')  # Utiliser le backend Agg qui ne nécessite pas de GUI
-import matplotlib.pyplot as plt
-from collections import deque
-import threading
-import subprocess
-from visualization import TrainingVisualizer, plot_rewards, plot_winning_stats
+matplotlib.use('Agg')
 
 # Hyperparameters
 EPISODES = 10000

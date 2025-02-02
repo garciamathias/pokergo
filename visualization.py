@@ -232,10 +232,25 @@ class TrainingVisualizer:
             
             # Calculate moving average of rewards
             if len(self.rewards_data[agent_name]) >= self.window_size:
-                moving_avg = [
-                    sum(self.rewards_data[agent_name][max(0, j-self.window_size):j])/min(j, self.window_size)
-                    for j in range(1, len(self.rewards_data[agent_name])+1)
-                ]
+                moving_avg = []
+                for j in range(1, len(self.rewards_data[agent_name])+1):
+                    # Get window of data
+                    start_idx = max(0, j-self.window_size)
+                    window_data = self.rewards_data[agent_name][start_idx:j]
+                    
+                    # Remove extreme values (0.5% from each end)
+                    if len(window_data) > 4:  # Only trim if we have enough data points
+                        window_data = np.array(window_data)
+                        lower_percentile = np.percentile(window_data, 0.5)
+                        upper_percentile = np.percentile(window_data, 99.5)
+                        trimmed_data = window_data[(window_data >= lower_percentile) & 
+                                                 (window_data <= upper_percentile)]
+                        avg = np.mean(trimmed_data) if len(trimmed_data) > 0 else np.mean(window_data)
+                    else:
+                        avg = np.mean(window_data)
+                    
+                    moving_avg.append(avg)
+                
                 self.reward_lines[agent_name].set_data(self.episodes, moving_avg)
             
             # Calculate cumulative win rate
@@ -277,10 +292,23 @@ def plot_rewards(rewards_history: dict, window_size: int = 50, save_path: str = 
     
     for (agent_name, rewards), color in zip(rewards_history.items(), colors):
         if len(rewards) >= window_size:
-            moving_avg = [
-                sum(rewards[i:i+window_size])/window_size 
-                for i in range(len(rewards)-window_size+1)
-            ]
+            moving_avg = []
+            for i in range(len(rewards)-window_size+1):
+                # Get window of data
+                window_data = np.array(rewards[i:i+window_size])
+                
+                # Remove extreme values (0.5% from each end)
+                if len(window_data) > 4:  # Only trim if we have enough data points
+                    lower_percentile = np.percentile(window_data, 0.5)
+                    upper_percentile = np.percentile(window_data, 99.5)
+                    trimmed_data = window_data[(window_data >= lower_percentile) & 
+                                             (window_data <= upper_percentile)]
+                    avg = np.mean(trimmed_data) if len(trimmed_data) > 0 else np.mean(window_data)
+                else:
+                    avg = np.mean(window_data)
+                
+                moving_avg.append(avg)
+            
             episodes = range(window_size-1, len(rewards))
             plt.plot(episodes, moving_avg, label=agent_name, color=color)
     
