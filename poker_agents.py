@@ -67,7 +67,7 @@ class PokerAgent:
         preferred_action = action_map[preferred_action_idx]
 
         # Check if preferred action is invalid
-        penalty_reward = -30 if preferred_action not in valid_actions else 0
+        penalty_reward = -1 if preferred_action not in valid_actions else 0
         
         # Create action mask based on valid actions
         if valid_actions:
@@ -90,7 +90,7 @@ class PokerAgent:
                 
         return action, penalty_reward
 
-    def remember(self, state, action, reward, next_state, done):
+    def remember(self, state, action, reward, next_state, done):        
         # Convert PlayerAction enum to numerical action for training
         action_map = {
             PlayerAction.CHECK: 0,
@@ -98,7 +98,7 @@ class PokerAgent:
             PlayerAction.FOLD: 2,
             PlayerAction.RAISE: 3,
             PlayerAction.ALL_IN: 4,
-            None: 0 # Special key for terminal state (cannot be 5 because of index error with tensors)
+            None: 0
         }
         numerical_action = action_map[action] if action is not None else action_map[None]
         self.memory.append((state, numerical_action, reward, next_state, done))

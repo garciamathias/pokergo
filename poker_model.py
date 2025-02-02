@@ -14,6 +14,12 @@ class ActorCriticModel(nn.Module):
             nn.Linear(256, 256),
             nn.LayerNorm(256),
             nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
         )
 
         # Separate streams for actor and critic

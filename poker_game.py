@@ -1086,7 +1086,6 @@ class PokerGame:
         for action_text in reversed(self.action_history[-self.num_players:]):
             if ":" in action_text:
                 player_name, action = action_text.split(":")
-                print(f"Player name: {player_name}")
                 player_idx = int(player_name.split("_")[-1]) - 1
                 action = action.strip()
                 for action_type in PlayerAction:
@@ -1120,71 +1119,82 @@ class PokerGame:
     def step(self, action: PlayerAction) -> Tuple[List[float], float]:
         """
         Execute an action and return the new state with the calculated reward.
-        The reward is now adjusted based on the hand strength so that the agent is
-        evaluated relative to its capacity. For example, if the agent has a bad hand,
-        folding will yield a positive reward while taking aggressive actions will be penalized.
+        The reward considers hand strength, positional play, pot odds, showdown outcomes, and chip changes.
         """
         current_player = self.players[self.current_player_idx]
         initial_stack = current_player.stack
-        initial_pot = self.pot
-        position_reward = 0.1 * (1 - self.current_player_idx / len(self.players))  # Reward for later positions
+        reward = 0.0
 
-        # Evaluate the current hand strength (normalized between 0 and 1)
+        # Capture game state before processing the action for pot odds calculation
+        call_amount_before = self.current_bet - current_player.current_bet
+        pot_before = self.pot
+
+        # Evaluate hand strength (0-1)
         hand_strength = self._evaluate_hand_strength(current_player)
 
-        # New reward structure based on hand strength and chosen action
+        # --- Strategic Action Rewards ---
+        # Reward based on action relative to hand strength
         if action in [PlayerAction.RAISE, PlayerAction.ALL_IN]:
             if hand_strength >= 0.7:
-                reward = 0.3  # Aggressive action rewarded when hand is strong
+                reward += 0.3  # Aggressive action with strong hand
             elif hand_strength >= 0.5:
-                reward = 0.1  # Moderate reward when hand is decent
+                reward += 0.1  # Moderate strength
             else:
-                reward = -0.3  # Aggressive play with a weak hand is penalized
+                reward -= 0.3  # Over-aggressive with weak hand
 
         elif action == PlayerAction.CALL:
             if hand_strength >= 0.7:
-                reward = 0.1  # Calling when very strong is suboptimal but still acceptable
+                reward += 0.1  # Should consider raising instead
             elif hand_strength >= 0.4:
-                reward = 0.05  # Slight reward when hand is mix of good and bad
+                reward += 0.05  # Neutral
             else:
-                reward = -0.1  # Calling with a weak hand is discouraged
+                reward -= 0.1  # Poor call with weak hand
 
         elif action == PlayerAction.FOLD:
             if hand_strength < 0.3:
-                reward = 0.3  # Good decision: fold when hand is very weak
+                reward += 0.3  # Good fold
             elif hand_strength < 0.5:
-                reward = 0.1  # Marginally good decision for moderately weak hand
+                reward += 0.1  # Reasonable fold
             else:
-                reward = -0.2  # Penalize folding when hand is actually strong
+                reward -= 0.2  # Bad fold with strong hand
 
-        elif action == PlayerAction.CHECK:
-            if hand_strength >= 0.7:
-                reward = 0.2  # Reward slow playing a strong hand
+        elif action == PlayerAction.CHECK and hand_strength >= 0.7:
+            reward += 0.2  # Slow-playing strong hand
+
+        # --- Positional Bonus ---
+        # Bonus for aggressive actions in late position (button)
+        if current_player.position == self.button_position:
+            if action in [PlayerAction.RAISE, PlayerAction.ALL_IN]:
+                reward += 0.2
+
+        # --- Phase-Specific Adjustments ---
+        # Penalize over-aggression in early phases
+        if action in [PlayerAction.RAISE, PlayerAction.ALL_IN]:
+            if self.current_phase in [GamePhase.PREFLOP, GamePhase.FLOP]:
+                reward -= 0.2
             else:
-                reward = 0.0  # Neutral reward if checking with a moderate or weak hand
+                reward += 0.1  # Encourage aggression in later streets
 
-        # Additional position-based bonus or penalty
-        reward += position_reward
-
-        # Process the action in the game state (this call will update the game state)
+        # Process the action (updates game state)
         self.process_action(current_player, action)
 
-        # After the state update, handle the showdown bonus/penalty
-        if self.current_phase == GamePhase.SHOWDOWN:
-            active_players = [p for p in self.players if p.is_active]
-            if len(active_players) == 1 and active_players[0] == current_player:
-                # Won by folding all others
-                stack_change = (current_player.stack - initial_stack) / self.big_blind
-                reward += 1.0 + (0.1 * stack_change)
+        # --- Pot Odds Evaluation ---
+        if action == PlayerAction.CALL and call_amount_before > 0:
+            total_pot_after_call = pot_before + call_amount_before
+            pot_odds = call_amount_before / total_pot_after_call if total_pot_after_call > 0 else 0
+            if hand_strength > pot_odds:
+                reward += 0.3  # Mathematically sound call
             else:
-                # Evaluate showdown hands
-                player_hands = [(p, self.evaluate_hand(p)) for p in active_players]
-                player_hands.sort(key=lambda x: (x[1][0].value, x[1][1]), reverse=True)
-                if player_hands[0][0] == current_player:
-                    stack_change = (current_player.stack - initial_stack) / self.big_blind
-                    reward += 1.5 + (0.1 * stack_change)
-                else:
-                    reward -= 1.0
+                reward -= 0.3  # Poor call considering odds
+
+        # --- Bankruptcy Penalty ---
+        if current_player.stack <= 0:
+            reward -= 5.0  # Severe penalty for busting
+
+        # --- Core Chip Change Reward ---
+        # Direct reward/penalty based on net chips gained/lost
+        stack_change = current_player.stack - initial_stack / self.starting_stack
+        reward += stack_change  # Normalized by current big blind
 
         return self.get_state(), reward
 

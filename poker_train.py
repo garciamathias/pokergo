@@ -100,7 +100,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
     
     # Calculer les récompenses finales en fonction des changements de stack et du statut de victoire
     final_stacks = [player.stack for player in env.players]
-    stack_changes = [(final - initial) / env.big_blind for final, initial in zip(final_stacks, initial_stacks)]
+    stack_changes = [np.clip((final - initial) / env.starting_stack, -1.0, 1.0) for final, initial in zip(final_stacks, initial_stacks)]
     
     # Déterminer les gagnants (joueurs avec le stack le plus élevé)
     max_stack = max(final_stacks)

@@ -8,7 +8,7 @@ set_seed(42)
 agent_list = []
 
 # Create the Q-learning agents for 3 players
-for i in range(3):  # Changed from 6 to 3
+for i in range(3):
     agent = PokerAgent(
         state_size=STATE_SIZE,
         action_size=5,  # [check, call, fold, raise, all-in]
