@@ -1282,6 +1282,9 @@ class PokerGame:
 
             # AI player logic
             if not current_player.is_human and self.current_phase != GamePhase.SHOWDOWN:
+                # Pause the game, to see the AI play
+                time.sleep(1)
+                
                 # Get corresponding agent (adjust for 0-based index)
                 agent = agent_list[self.current_player_idx]
                 if agent and current_player.is_active:
@@ -1310,9 +1313,6 @@ class PokerGame:
             self._draw()
             pygame.display.flip()
             self.clock.tick(30)
-
-            # Pause the game, to see the AI play
-            time.sleep(1)
 
             # Handle automatic showdown resolution
             if self.current_phase == GamePhase.SHOWDOWN:

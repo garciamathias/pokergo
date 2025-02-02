@@ -19,7 +19,7 @@ def main():
             action_size=5,
             gamma=0.9985,
             learning_rate=0.003,
-            load_model=False,
+            load_model=True,
             load_path=f"saved_models/poker_agent_player_{i}.pth"
         )
         agent.name = f"player_{i}"

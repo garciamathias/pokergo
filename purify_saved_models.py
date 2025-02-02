@@ -14,6 +14,12 @@ def purify_saved_models():
     
     # Get all files in the directory
     files = os.listdir(saved_models_dir)
+
+    # Count the number of files containing 'epoch', if it's not over 0, stop everything
+    epoch_files = [file for file in files if 'epoch' in file.lower()]
+    if len(epoch_files) == 0:
+        print("No files containing 'epoch' found. Stopping everything.")
+        return
     
     # First, delete files not containing 'epoch'
     for file in files:
