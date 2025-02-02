@@ -1073,23 +1073,18 @@ class PokerGame:
             PlayerAction.CHECK: 2,
             PlayerAction.CALL: 3,
             PlayerAction.RAISE: 4,
-            PlayerAction.ALL_IN: 5
+            PlayerAction.ALL_IN: 5  # Added ALL_IN action encoding
         }
         last_actions = [0] * self.num_players
         for action_text in reversed(self.action_history[-self.num_players:]):
             if ":" in action_text:
                 player_name, action = action_text.split(":")
-                # Find player index by matching full name instead of parsing number
-                for idx, player in enumerate(self.players):
-                    if player.name in player_name:
-                        player_idx = idx
-                        break
+                player_idx = int(player_name.split()[-1]) - 1
                 action = action.strip()
                 for action_type in PlayerAction:
                     if action_type.value in action:
                         last_actions[player_idx] = action_encoding[action_type]
-                        break
-
+                        
         state.extend(last_actions)
 
         # 12. Win probability estimation

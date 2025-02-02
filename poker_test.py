@@ -37,7 +37,7 @@ def set_seed(seed=42):
 set_seed(42)
 
 # Function to run a single episode
-def run_episode(agent_list, episode):
+def run_test_games(agent_list):
     # Initialize game environment
     env = PokerGame()
     env.reset()
@@ -62,8 +62,9 @@ def run_episode(agent_list, episode):
         if not current_player.is_human:
             print(f"AI {current_agent.name} is playing")
             # AI agent's turn
-            action_chosen, _ = current_agent.get_action(state, 0.01, valid_actions)
+            action_chosen, _ = current_agent.get_action(state, 0.99, valid_actions)
             env.step(action_chosen)
+            time.sleep(1)
         else:
             print(f"Human is playing")
             # Human player's turn
@@ -82,6 +83,7 @@ def run_episode(agent_list, episode):
                                 action_chosen = action
                                 env.step(action_chosen)
                                 human_has_acted = True
+                                time.sleep(1)
                                 break
                         
                         # Check bet slider for raise actions
@@ -136,7 +138,7 @@ if __name__ == "__main__":
             action_size=5,
             gamma=GAMMA,
             learning_rate=ALPHA,
-            load_model=True,
+            load_model=False,
             load_path=f"saved_models/poker_agent_player_{i}.pth"
         )
         agent.name = f"player_{i}"
@@ -153,7 +155,7 @@ if __name__ == "__main__":
                 env.players[i].name = agent.name
                 env.players[i].is_human = agent.is_human
             
-            run_episode(agent_list, episode)
+            run_test_games(agent_list)
             episode += 1
     except KeyboardInterrupt:
         print("\nGame ended by user")
