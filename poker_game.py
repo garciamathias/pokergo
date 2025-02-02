@@ -1012,44 +1012,37 @@ class PokerGame:
             "♣" : 3
         }
 
-        # 1. Cards information (normalized values 2-14 -> 0-1)
+        # 1. Cards information (one-hot encoded)
         # Player's cards
         for card in current_player.cards:
             value_range = [0.01] * 13
             value_range[card.value - 2] = 1
-            state.append(value_range)
+            state.extend(value_range)  # Extend instead of append for value
             suit_range = [0.01] * 4
             suit_range[suit_map[card.suit]] = 1
-            state.append(suit_range)
+            state.extend(suit_range)  # Extend instead of append for suit
+        
+        # Add padding for missing player cards
+        remaining_player_cards = 2 - len(current_player.cards)
+        for _ in range(remaining_player_cards):
+            state.extend([0.01] * 13)  # Pad card values
+            state.extend([0.01] * 4)   # Pad card suits
         
         # Community cards
-        flop = [-1] * 3
-        turn = [-1]
-        river = [-1]
         for i, card in enumerate(self.community_cards):
-            if i < 3:
-                value_range = [0.01] * 13
-                value_range[card.value - 2] = 1
-                state.append(value_range)
-                suit_range = [0.01] * 4
-                suit_range[suit_map[card.suit]] = 1
-                state.append(suit_range)
-            elif i == 3:
-                value_range = [0.01] * 13
-                value_range[card.value - 2] = 1
-                state.append(value_range)
-                suit_range = [0.01] * 4
-                suit_range[suit_map[card.suit]] = 1
-                state.append(suit_range)
-            else:
-                value_range = [0.01] * 13
-                value_range[card.value - 2] = 1
-                state.append(value_range)
-                suit_range = [0.01] * 4
-                suit_range[suit_map[card.suit]] = 1
-                state.append(suit_range)
-        state.extend(flop + turn + river)
-
+            value_range = [0.01] * 13
+            value_range[card.value - 2] = 1
+            state.extend(value_range)  # Extend instead of append
+            suit_range = [0.01] * 4
+            suit_range[suit_map[card.suit]] = 1
+            state.extend(suit_range)  # Extend instead of append
+        
+        # Add padding for missing community cards
+        remaining_community_cards = 5 - len(self.community_cards)
+        for _ in range(remaining_community_cards):
+            state.extend([0.01] * 13)  # Pad card values
+            state.extend([0.01] * 4)   # Pad card suits
+        
         # 2. Current hand rank (if enough cards are visible)
         if len(current_player.cards) + len(self.community_cards) >= 5:
             hand_rank, _ = self.evaluate_hand(current_player)
@@ -1060,12 +1053,15 @@ class PokerGame:
         # 3. Round information
         phase_values = {
             GamePhase.PREFLOP: 0,
-            GamePhase.FLOP: 0.25,
-            GamePhase.TURN: 0.5,
-            GamePhase.RIVER: 0.75,
-            GamePhase.SHOWDOWN: 1
+            GamePhase.FLOP: 1,
+            GamePhase.TURN: 2,
+            GamePhase.RIVER: 3,
+            GamePhase.SHOWDOWN: 4
         }
-        state.append(phase_values[self.current_phase])  # Normalize phase value (size = 1)
+
+        phase_range = [0.01] * 5
+        phase_range[phase_values[self.current_phase]] = 1
+        state.extend(phase_range)
 
         # 4. Round number
         state.append(self.round_number)  # Normalize round number (size = 1)
@@ -1164,6 +1160,9 @@ class PokerGame:
 
         # 15. Aggression factor
         state.append(self.number_raise_this_round / 4) # (size = 1)
+
+        # Before returning, convert to numpy array
+        state = np.array(state, dtype=np.float32)
         return state
 
     def step(self, action: PlayerAction) -> Tuple[List[float], float]:
@@ -1361,23 +1360,44 @@ class PokerGame:
                     if event.key == pygame.K_s:
                         state = self.get_state()
                         print('--------------------------------')
-                        print(f"Player cards: {[x * 12 + 2 for x in state[0:2]]}")
-                        print(f"Community cards: {[x * 12 + 2 for x in state[2:7]]}")
-                        print(f"Hand rank: {state[7] * len(HandRank)}")
-                        print(f"Game phase: {state[8]}")
-                        print(f"Round number: {state[9]}")
-                        print(f"Current bet: {state[10]}")
-                        print(f"Stack sizes: {[x * self.starting_stack for x in state[11:14]]}")  
-                        print(f"Current bets: {state[14:17]}")  
-                        print(f"Player activity: {state[17:20]}")  
-                        print(f"Relative positions: {state[20:23]}")  
-                        print(f"Available actions: {state[23:28]}")
-                        print(f"Previous actions Player 1: {state[28:34]}")
-                        print(f"Previous actions Player 2: {state[34:40]}")
-                        print(f"Previous actions Player 3: {state[40:46]}")
-                        print(f"Win probability: {state[46]}")
-                        print(f"Pot odds: {state[47]}")
-                        print(f"Aggression factor: {state[48]}")
+                        
+                        # Print player cards (2 cards, each with value and suit)
+                        print("Player cards:")
+                        for i in range(2):  # 2 cards
+                            value_range = state[i*17:(i*17)+13]  # 13 possible values
+                            suit_range = state[i*17+13:(i*17)+17]  # 4 possible suits
+                            value = value_range.index(1) + 2  # Convert back to card value
+                            suit = ["♠", "♥", "♦", "♣"][suit_range.index(1)]  # Convert back to suit
+                            print(f"Card {i+1}: {value}{suit}")
+                        
+                        # Print community cards (up to 5 cards)
+                        print("\nCommunity cards:")
+                        for i in range(5):  # Up to 5 community cards
+                            base_idx = 34 + (i*17)  # Starting index for each community card
+                            value_range = state[base_idx:base_idx+13]
+                            suit_range = state[base_idx+13:base_idx+17]
+                            if 1 in value_range:  # Check if card exists
+                                value = value_range.index(1) + 2
+                                suit = ["♠", "♥", "♦", "♣"][suit_range.index(1)]
+                                print(f"Card {i+1}: {value}{suit}")
+                        
+                        # Print rest of state information
+                        print(f"\nHand rank: {state[119] * len(HandRank)}")  # Index after card encodings
+                        print(f"Game phase: {state[120:125]}")  # 5 values for game phase
+                        print(f"Round number: {state[125]}")
+                        print(f"Current bet: {state[126]}")
+                        print(f"Stack sizes: {[x * self.starting_stack for x in state[127:130]]}")
+                        print(f"Current bets: {state[130:133]}")
+                        print(f"Player activity: {state[133:136]}")
+                        print(f"Relative positions: {state[136:139]}")
+                        print(f"Available actions: {state[139:144]}")
+                        print(f"Previous actions Player 1: {state[144:150]}")
+                        print(f"Previous actions Player 2: {state[150:156]}")
+                        print(f"Previous actions Player 3: {state[156:162]}")
+                        print(f"Win probability: {state[162]}")
+                        print(f"Pot odds: {state[163]}")
+                        print(f"Equity: {state[164]}")
+                        print(f"Aggression factor: {state[165]}")
                         print('--------------------------------')
                 
                 self.handle_input(event)

@@ -121,7 +121,7 @@ if __name__ == "__main__":
         gamma=GAMMA,
         learning_rate=ALPHA
     )
-    human_agent.name = "Human"
+    human_agent.name = "Human_1"
     human_agent.is_human = True
     agent_list.append(human_agent)
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
             action_size=5,
             gamma=GAMMA,
             learning_rate=ALPHA,
-            load_model=False,
+            load_model=True,
             load_path=f"saved_models/poker_agent_player_{i}.pth"
         )
         agent.name = f"player_{i}"
