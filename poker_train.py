@@ -28,15 +28,6 @@ WINDOW_SIZE = 50
 PLOT_UPDATE_INTERVAL = 10  
 SAVE_INTERVAL = 500 # Sauvegarder les graphiques tous les X épisodes
 
-def configure_git():
-    """Configure Git to use merge strategy for pulls"""
-    try:
-        # Configure Git to use merge strategy
-        subprocess.run(['git', 'config', 'pull.rebase', 'false'], check=True)
-        print("Git configured successfully to use merge strategy")
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Could not configure Git: {e}")
-
 def set_seed(seed=42):
     rd.seed(seed)
     np.random.seed(seed)
@@ -50,42 +41,26 @@ def set_seed(seed=42):
 
 set_seed(42)
 
-def get_state_size():
-    """
-    Calculate the state size for 3 players
-    """
-    # Base state components
-    state_size = (
-        2 +  # 2 hole cards
-        5 +  # 5 community cards
-        1 +  # current phase
-        1 +  # round number
-        1 +  # current bet
-        3 +  # stack sizes (3 players)
-        3 +  # current bets (3 players)
-        3 +  # activity status (3 players)
-        3 +  # relative positions (3 players)
-        5 +  # available actions
-        3 +  # last actions (3 players)
-        1    # hand strength
-    )
-    return state_size
-
 # Function to run a single episode
 def run_episode(agent_list, epsilon, rendering, episode, render_every):
-    # Initialiser l'environnement de jeu
+    # Initialize game environment
     env = PokerGame()
     env.reset()
     
-    # Initialiser les récompenses cumulatives pour chaque joueur
+    # Sync player names and human status with agents
+    for i, agent in enumerate(agent_list):
+        env.players[i].name = agent.name
+        env.players[i].is_human = agent.is_human
+    
+    # Initialize cumulative rewards for each player
     cumulative_rewards = [0] * len(agent_list)
-    # Stocker les stacks initiaux pour calculer les changements à la fin
+    # Store initial stacks to calculate changes at end
     initial_stacks = [player.stack for player in env.players]
-    # Listes pour stocker les actions prises et les forces des mains
+    # Lists to store actions taken and hand strengths
     actions_taken = []
-    hand_strengths = [] 
+    hand_strengths = []
 
-    # Boucle principale du jeu jusqu'à ce que la phase de showdown soit atteinte
+    # Main game loop continues as before...
     while not env.current_phase == GamePhase.SHOWDOWN:
         # Récupérer le joueur actuel et l'agent correspondant
         current_player = env.players[env.current_player_idx]
@@ -171,6 +146,12 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
         for episode in range(episodes):
             # Decay epsilon
             epsilon = np.clip(0.5 * EPS_DECAY ** episode, 0.01, 0.5)
+            
+            # Initialize game and sync player names with agents
+            env = PokerGame()
+            for i, agent in enumerate(agent_list):
+                env.players[i].name = agent.name
+                env.players[i].is_human = agent.is_human
             
             # Run episode and get results including metrics
             reward_list, winning_list, actions_taken, hand_strengths, metrics_list = run_episode(

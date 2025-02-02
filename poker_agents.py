@@ -30,6 +30,9 @@ class PokerAgent:
 
         self.old_action_probs = None  # For tracking KL divergence
 
+        self.is_human = False
+        self.name = 'unknown_agent'
+
     def load(self, load_path):
         self.model.load_state_dict(torch.load(load_path))
 

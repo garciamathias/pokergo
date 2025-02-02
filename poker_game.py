@@ -1073,18 +1073,23 @@ class PokerGame:
             PlayerAction.CHECK: 2,
             PlayerAction.CALL: 3,
             PlayerAction.RAISE: 4,
-            PlayerAction.ALL_IN: 5  # Added ALL_IN action encoding
+            PlayerAction.ALL_IN: 5
         }
         last_actions = [0] * self.num_players
         for action_text in reversed(self.action_history[-self.num_players:]):
             if ":" in action_text:
                 player_name, action = action_text.split(":")
-                player_idx = int(player_name.split()[-1]) - 1
+                # Find player index by matching full name instead of parsing number
+                for idx, player in enumerate(self.players):
+                    if player.name in player_name:
+                        player_idx = idx
+                        break
                 action = action.strip()
                 for action_type in PlayerAction:
                     if action_type.value in action:
                         last_actions[player_idx] = action_encoding[action_type]
                         break
+
         state.extend(last_actions)
 
         # 12. Win probability estimation
@@ -1249,76 +1254,6 @@ class PokerGame:
             self._draw()
             pygame.display.flip()
         
-        pygame.quit()
-
-    def run_mixed_game(self, agent_list):
-        """
-        Run the game loop with a mix of human and AI players
-        Args:
-            agent_list: List of agents/human players (None for human, agent for AI)
-        """
-        self.reset()
-        running = True
-        ai_action_delay = 1000  # Delay AI actions by 1 second for observability
-
-        for player in self.players:
-            print(player.name, player.stack)
-
-        while running:
-            current_time = pygame.time.get_ticks()
-            current_player = self.players[self.current_player_idx]
-
-            # Handle events for human players
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        running = False
-                
-                # Human player input handling
-                if current_player.is_human:
-                    self.handle_input(event)
-
-            # AI player logic
-            if not current_player.is_human and self.current_phase != GamePhase.SHOWDOWN:
-                # Pause the game, to see the AI play
-                time.sleep(1)
-                
-                # Get corresponding agent (adjust for 0-based index)
-                agent = agent_list[self.current_player_idx]
-                if agent and current_player.is_active:
-                    # Get current state and select action
-                    state = self.get_state()
-
-                    # Get valid actions
-                    valid_actions = [action for action in PlayerAction if self.action_buttons[action].enabled]
-                    
-                    # Get AI action with exploration
-                    action, _  = agent.get_action(state, epsilon=0.01, valid_actions=valid_actions)
-                    
-                    # For raise actions, calculate appropriate bet size
-                    bet_amount = None
-                    if action == PlayerAction.RAISE:
-                        min_raise = max(self.current_bet * 2, self.big_blind * 2)
-                        max_raise = current_player.stack + current_player.current_bet
-                        bet_amount = min_raise# min(max_raise, max(min_raise, int(max_raise * 0.5)))  # Standard 50% pot raise
-                    
-                    # Process AI action after delay
-                    if current_time - self.last_ai_action_time > ai_action_delay:
-                        self.process_action(current_player, action, bet_amount)
-                        self.last_ai_action_time = current_time
-
-            # Update display
-            self._draw()
-            pygame.display.flip()
-            self.clock.tick(30)
-
-            # Handle automatic showdown resolution
-            if self.current_phase == GamePhase.SHOWDOWN:
-                if current_time - self.winner_display_start > self.winner_display_duration:
-                    self.reset()
-
         pygame.quit()
 
     def update_blinds(self):
