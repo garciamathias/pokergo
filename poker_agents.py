@@ -9,10 +9,11 @@ import random
 import numpy as np
 
 device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
-device = 'cpu'  # Uncomment to force CPU
+device = 'cpu'  # Uncomment to unforce CPU
 
 class PokerAgent:
     def __init__(self, state_size, action_size, gamma, learning_rate, entropy_coeff=0.01, value_loss_coeff=0.5, load_model=False, load_path=None):
+        self.device = device
         self.state_size = state_size
         self.action_size = action_size
         self.gamma = gamma
@@ -36,59 +37,52 @@ class PokerAgent:
     def load(self, load_path):
         self.model.load_state_dict(torch.load(load_path))
 
-    def get_action(self, state, epsilon, valid_actions=None):
-        """
-        Get an action from the agent.
-        Args:
-            state: Current game state
-            epsilon: Exploration rate
-            valid_actions: List of currently valid PlayerActions
-        """
-        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
-        self.model.eval()
-        with torch.no_grad():
-            action_probs, _ = self.model(state_tensor)
-        self.model.train()
-
-        # Create action map
+    def get_action(self, state, epsilon, valid_actions):
+        # Convert valid PlayerActions to numerical indices
         action_map = {
-            0: PlayerAction.CHECK,
-            1: PlayerAction.CALL,
-            2: PlayerAction.FOLD,
-            3: PlayerAction.RAISE,
-            4: PlayerAction.ALL_IN,
+            PlayerAction.CHECK: 0,
+            PlayerAction.CALL: 1,
+            PlayerAction.FOLD: 2,
+            PlayerAction.RAISE: 3,
+            PlayerAction.ALL_IN: 4
         }
+        valid_indices = [action_map[a] for a in valid_actions]
         
-        # Create reverse map for masking
-        reverse_map = {v: k for k, v in action_map.items()}
+        # Create action mask tensor with batch dimension
+        action_mask = torch.zeros((1, self.action_size), device=self.device)
+        for idx in valid_indices:
+            action_mask[0, idx] = 1
 
-        # Model's preferred action (before checking validity)
-        preferred_action_idx = torch.argmax(action_probs).item()
-        preferred_action = action_map[preferred_action_idx]
-
-        # Check if preferred action is invalid
-        penalty_reward = -1 if preferred_action not in valid_actions else 0
-        
-        # Create action mask based on valid actions
-        if valid_actions:
-            # Create a mask of zeros
-            mask = torch.zeros_like(action_probs)
-            # Set 1s for valid actions
-            for action in valid_actions:
-                mask[0, reverse_map[action]] = 1
-            # Apply mask to probabilities
-            action_probs = action_probs * mask
-            # Renormalize probabilities
-            action_probs = action_probs / (action_probs.sum() + 1e-10)
-
-        if random.random() < epsilon:  # Exploration
-            action = random.choice(valid_actions)
-        else: # Exploitation
-            valid_indices = [reverse_map[a] for a in valid_actions]
-            valid_probs = action_probs[0, valid_indices]
-            action = action_map[valid_indices[torch.argmax(valid_probs).item()]]
-                
-        return action, penalty_reward
+        if np.random.random() < epsilon:
+            # Random exploration with valid actions only
+            chosen_index = np.random.choice(valid_indices)
+            return PlayerAction(list(action_map.keys())[list(action_map.values()).index(chosen_index)]), 0
+        else:
+            # Convert state to tensor and add batch dimension
+            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+            
+            # Get action probabilities from model
+            self.model.eval()
+            with torch.no_grad():
+                action_probs, _ = self.model(state_tensor)
+            
+            # Apply action mask and renormalize
+            masked_probs = action_probs * action_mask
+            if masked_probs.sum().item() == 0:  # Handle all-zero probabilities
+                chosen_index = np.random.choice(valid_indices)
+            else:
+                # Normalize and convert to numpy
+                masked_probs = masked_probs / masked_probs.sum()
+                chosen_index = torch.argmax(masked_probs).item()
+            
+            # Verify the chosen action is valid
+            if chosen_index not in valid_indices:
+                # Fallback to random valid action with penalty
+                penalty = -0.2  # Strong penalty for invalid prediction
+                chosen_index = np.random.choice(valid_indices)
+                return PlayerAction(list(action_map.keys())[list(action_map.values()).index(chosen_index)]), penalty
+            
+            return PlayerAction(list(action_map.keys())[list(action_map.values()).index(chosen_index)]), 0
 
     def remember(self, state, action, reward, next_state, done):        
         # Convert PlayerAction enum to numerical action for training
@@ -105,7 +99,7 @@ class PokerAgent:
 
     def train_model(self):
         if len(self.memory) < 128:  # Minimum batch size
-            return None
+            return {'loss': 0, 'entropy': 0}
 
         batch = random.sample(self.memory, 128)
         states, actions, rewards, next_states, dones = zip(*batch)

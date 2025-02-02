@@ -5,6 +5,7 @@ from enum import Enum
 from typing import List, Dict, Optional, Tuple
 import pygame.font
 from collections import Counter
+import numpy as np
 import torch
 import time
 
@@ -1003,10 +1004,23 @@ class PokerGame:
         current_player = self.players[self.current_player_idx]
         state = []
 
+        # Map suits to numbers ♠, ♥, ♦, ♣
+        suit_map = {
+            "♠" : 0,
+            "♥" : 1,
+            "♦" : 2,
+            "♣" : 3
+        }
+
         # 1. Cards information (normalized values 2-14 -> 0-1)
         # Player's cards
         for card in current_player.cards:
-            state.append((card.value - 2) / 12)  # Normalize card values (size = 2)
+            value_range = [0.01] * 13
+            value_range[card.value - 2] = 1
+            state.append(value_range)
+            suit_range = [0.01] * 4
+            suit_range[suit_map[card.suit]] = 1
+            state.append(suit_range)
         
         # Community cards
         flop = [-1] * 3
@@ -1014,11 +1028,26 @@ class PokerGame:
         river = [-1]
         for i, card in enumerate(self.community_cards):
             if i < 3:
-                flop[i] = (card.value - 2) / 12
+                value_range = [0.01] * 13
+                value_range[card.value - 2] = 1
+                state.append(value_range)
+                suit_range = [0.01] * 4
+                suit_range[suit_map[card.suit]] = 1
+                state.append(suit_range)
             elif i == 3:
-                turn[0] = (card.value - 2) / 12
+                value_range = [0.01] * 13
+                value_range[card.value - 2] = 1
+                state.append(value_range)
+                suit_range = [0.01] * 4
+                suit_range[suit_map[card.suit]] = 1
+                state.append(suit_range)
             else:
-                river[0] = (card.value - 2) / 12
+                value_range = [0.01] * 13
+                value_range[card.value - 2] = 1
+                state.append(value_range)
+                suit_range = [0.01] * 4
+                suit_range[suit_map[card.suit]] = 1
+                state.append(suit_range)
         state.extend(flop + turn + river)
 
         # 2. Current hand rank (if enough cards are visible)
@@ -1051,7 +1080,7 @@ class PokerGame:
 
         # 7. Bets information (normalized by big blind)
         for player in self.players:
-            state.append(player.current_bet / self.big_blind) # (size = 3)
+            state.append(player.current_bet / initial_stack) # (size = 3)
 
         # 8. Activity information (extreme binary: active/folded)
         for player in self.players:
@@ -1059,9 +1088,8 @@ class PokerGame:
 
         # 9. Position information (one-hot encoded relative positions)
         relative_positions = [0.1] * self.num_players
-        for i in range(self.num_players):
-            relative_pos = (i - self.current_player_idx) % self.num_players
-            relative_positions[relative_pos] = 1
+        relative_pos = (self.current_player_idx - self.button_position) % self.num_players
+        relative_positions[relative_pos] = 1
         state.extend(relative_positions) # (size = 3)
 
         # 10. Available actions (extreme binary: available/unavailable)
@@ -1073,26 +1101,37 @@ class PokerGame:
                 action_availability.append(-1)
         state.extend(action_availability) # (size = 3)
 
-        # 11. Previous actions (last action of each player, encoded)
+        # 11. Previous actions (last action of each player, encoded as one-hot vectors)
         action_encoding = {
             None: 0,
             PlayerAction.FOLD: 1,
             PlayerAction.CHECK: 2,
             PlayerAction.CALL: 3,
             PlayerAction.RAISE: 4,
-            PlayerAction.ALL_IN: 5  # Added ALL_IN action encoding
+            PlayerAction.ALL_IN: 5
         }
-        last_actions = [0] * self.num_players
+
+        # Initialize last actions array with zeros
+        last_actions = [[0.1] * 6 for _ in range(self.num_players)]  # 6 possible actions (including None)
+
+        # Process recent actions
         for action_text in reversed(self.action_history[-self.num_players:]):
             if ":" in action_text:
                 player_name, action = action_text.split(":")
                 player_idx = int(player_name.split("_")[-1]) - 1
                 action = action.strip()
+                
+                # Find matching action type
                 for action_type in PlayerAction:
                     if action_type.value in action:
-                        last_actions[player_idx] = action_encoding[action_type]
-                        
-        state.extend(last_actions) # (size = 3) 
+                        # Create one-hot encoding
+                        last_actions[player_idx] = [0.1] * 6  # Reset to all zeros
+                        last_actions[player_idx][action_encoding[action_type]] = 1
+                        break
+
+        # Flatten the actions list and add to state
+        flattened_actions = [val for sublist in last_actions for val in sublist]
+        state.extend(flattened_actions)  # (size = num_players * 6)
 
         # 12. Win probability estimation
         active_players = [p for p in self.players if p.is_active]
@@ -1119,9 +1158,12 @@ class PokerGame:
         pot_odds = call_amount / (self.pot + call_amount) if (self.pot + call_amount) > 0 else 0
         state.append(pot_odds) # (size = 1)
 
-        # 14. Aggression factor
-        state.append(self.number_raise_this_round / 4) # (size = 1)
+        # 14. Equity
+        equity = self._evaluate_equity(current_player)
+        state.append(equity) # (size = 1)
 
+        # 15. Aggression factor
+        state.append(self.number_raise_this_round / 4) # (size = 1)
         return state
 
     def step(self, action: PlayerAction) -> Tuple[List[float], float]:
@@ -1156,7 +1198,7 @@ class PokerGame:
             reward += 0.1 * min(hand_strength, 0.6)  # Diminished returns for passive play
         
         elif action == PlayerAction.CHECK: # Penalize check if hand is strong
-            if hand_strength > 0.8:
+            if hand_strength > 0.5:
                 reward -= 0.5 * pot_potential
 
         elif action == PlayerAction.FOLD:
@@ -1164,7 +1206,7 @@ class PokerGame:
                 reward += 0.3  # Reward good folds
             else:
                 reward -= 0.5  # Penalize folding decent hands
-
+            
         # --- Positional Bonus ---
         # Bonus for aggressive actions in late position (button)
         if current_player.position == self.button_position:
@@ -1178,7 +1220,7 @@ class PokerGame:
                 reward -= 0.2
             else:
                 reward += 0.1  # Encourage aggression in later streets
-
+        
         # Process the action (updates game state)
         self.process_action(current_player, action)
 
@@ -1197,7 +1239,7 @@ class PokerGame:
 
         # --- Core Chip Change Reward ---
         # Direct reward/penalty based on net chips gained/lost
-        stack_change = current_player.stack - initial_stack / self.starting_stack
+        stack_change = (current_player.stack - initial_stack) / self.starting_stack
         reward += stack_change  # Normalized by current big blind
 
         return self.get_state(), reward
@@ -1239,6 +1281,64 @@ class PokerGame:
         
         return min(base_score, 1.0)  # Garantir que le score est entre 0 et 1
 
+    def _evaluate_equity(self, player) -> float:
+        """
+        Calculate the pot equity (expected value) for a player's hand.
+        Takes into account:
+        - Current hand strength
+        - Pot size
+        - Position
+        - Number of active players
+        Returns:
+            float: Equity value between 0 and 1
+        """
+        # Get base equity from hand strength
+        hand_strength = self._evaluate_hand_strength(player)
+        
+        # Count active players
+        active_players = [p for p in self.players if p.is_active]
+        num_active = len(active_players)
+        if num_active <= 1:
+            return 1.0  # Only player left
+        
+        # Position multiplier (better position = higher equity)
+        # Calculate relative position from button (0 = button, 1 = SB, 2 = BB)
+        relative_pos = (player.position - self.button_position) % self.num_players
+        position_multiplier = 1.0 + (0.1 * (self.num_players - relative_pos) / self.num_players)
+        
+        # Pot odds consideration
+        total_pot = self.pot + sum(p.current_bet for p in self.players)
+        call_amount = self.current_bet - player.current_bet
+        if call_amount > 0 and total_pot > 0:
+            pot_odds = call_amount / (total_pot + call_amount)
+            # Adjust equity based on pot odds
+            if hand_strength > pot_odds:
+                equity_multiplier = 1.2  # Good pot odds
+            else:
+                equity_multiplier = 0.8  # Poor pot odds
+        else:
+            equity_multiplier = 1.0
+        
+        # Phase multiplier (later streets = more accurate equity)
+        phase_multipliers = {
+            GamePhase.PREFLOP: 0.7,  # Less certain
+            GamePhase.FLOP: 0.8,
+            GamePhase.TURN: 0.9,
+            GamePhase.RIVER: 1.0     # Most certain
+        }
+        phase_multiplier = phase_multipliers.get(self.current_phase, 1.0)
+        
+        # Calculate final equity
+        equity = (
+            hand_strength 
+            * position_multiplier 
+            * equity_multiplier 
+            * phase_multiplier
+        )
+        
+        # Clip to [0, 1]
+        return np.clip(equity, 0.0, 1.0)
+
     def manual_run(self):
         """
         Main game loop.
@@ -1263,19 +1363,21 @@ class PokerGame:
                         print('--------------------------------')
                         print(f"Player cards: {[x * 12 + 2 for x in state[0:2]]}")
                         print(f"Community cards: {[x * 12 + 2 for x in state[2:7]]}")
-                        print(f"Hand rank: {state[7]}")
+                        print(f"Hand rank: {state[7] * len(HandRank)}")
                         print(f"Game phase: {state[8]}")
                         print(f"Round number: {state[9]}")
                         print(f"Current bet: {state[10]}")
-                        print(f"Stack sizes: {state[11:14]}")  
+                        print(f"Stack sizes: {[x * self.starting_stack for x in state[11:14]]}")  
                         print(f"Current bets: {state[14:17]}")  
                         print(f"Player activity: {state[17:20]}")  
                         print(f"Relative positions: {state[20:23]}")  
                         print(f"Available actions: {state[23:28]}")
-                        print(f"Previous actions: {state[28:31]}")  
-                        print(f"Win probability: {state[31]}")
-                        print(f"Pot odds: {state[32]}")
-                        print(f"Aggression factor: {state[33]}")
+                        print(f"Previous actions Player 1: {state[28:34]}")
+                        print(f"Previous actions Player 2: {state[34:40]}")
+                        print(f"Previous actions Player 3: {state[40:46]}")
+                        print(f"Win probability: {state[46]}")
+                        print(f"Pot odds: {state[47]}")
+                        print(f"Aggression factor: {state[48]}")
                         print('--------------------------------')
                 
                 self.handle_input(event)

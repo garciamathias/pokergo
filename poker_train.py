@@ -18,9 +18,9 @@ from visualization import TrainingVisualizer, plot_winning_stats
 # Hyperparameters
 EPISODES = 10000
 GAMMA = 0.9985
-ALPHA = 0.003
+ALPHA = 0.001
 EPS_DECAY = 0.9998
-STATE_SIZE = 34
+STATE_SIZE = 50
 RENDERING = False
 FPS = 1
 
@@ -72,6 +72,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         strength = env._evaluate_hand_strength(current_player)
         hand_strengths.append(strength)
         
+        
         # Obtenir l'action choisie par l'agent et la pénalité associée (si l'agent choisit une action invalide, action_chosen est choisie aléatoirement parmi les actions valides et recevra une pénalité)
         action_chosen, penalty_reward = current_agent.get_action(state, epsilon, valid_actions)
         cumulative_rewards[env.current_player_idx] += penalty_reward
@@ -112,8 +113,8 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         terminal_state = env.get_state()
         is_winner = winning_list[i]
         # Attribuer une récompense finale basée sur la victoire/défaite et le changement de stack
-        final_reward = 50.0 if is_winner else -50
-        final_reward += stack_changes[i]  # Inclure l'impact du changement de stack
+        final_reward = 1.0 if is_winner else -1.0
+        final_reward += stack_changes[i] * 3  # Inclure l'impact du changement de stack
         agent.remember(terminal_state, None, final_reward, None, True)
 
     print("final_rewards: ", final_rewards)
@@ -144,7 +145,7 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
     try:
         for episode in range(episodes):
             # Decay epsilon
-            epsilon = np.clip(0.5 * EPS_DECAY ** episode, 0.01, 0.5)
+            epsilon = np.clip(EPS_DECAY ** episode, 0.01, 1.0)
             
             # Initialize game and sync player names with agents
             env = PokerGame()
