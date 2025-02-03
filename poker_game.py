@@ -979,6 +979,7 @@ class PokerGame:
             # Can't check if there's a bet to call
             if current_player.current_bet < self.current_bet:
                 self.action_buttons[PlayerAction.CHECK].enabled = False
+        
         # Disable call if no bet to call or not enough chips
         if current_player.current_bet == self.current_bet:
             self.action_buttons[PlayerAction.CALL].enabled = False
@@ -993,10 +994,6 @@ class PokerGame:
         # Also if the player has already raised 3 times, disable raise
         if self.number_raise_this_round >= 4:
             self.action_buttons[PlayerAction.RAISE].enabled = False
-
-        # If Check is enabled, disable fold
-        if self.action_buttons[PlayerAction.CHECK].enabled:
-            self.action_buttons[PlayerAction.FOLD].enabled = False
         
         # All-in always available if player has chips
         self.action_buttons[PlayerAction.ALL_IN].enabled = current_player.stack > 0

@@ -19,7 +19,7 @@ from visualization import TrainingVisualizer, plot_winning_stats
 EPISODES = 10000
 GAMMA = 0.9985
 ALPHA = 0.001
-EPS_DECAY = 0.9998
+EPS_DECAY = 0.9999
 STATE_SIZE = 166
 RENDERING = False
 FPS = 1
@@ -54,8 +54,8 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
     cumulative_rewards = [0] * len(agent_list)
     # Store initial stacks to calculate changes at end
     initial_stacks = [player.stack for player in env.players]
-    # Lists to store actions taken and hand strengths
-    actions_taken = []
+    # Modify the actions_taken to track per agent
+    actions_taken = {f"Agent {i+1}": [] for i in range(len(agent_list))}
     hand_strengths = []
 
     # Main game loop continues as before...
@@ -67,12 +67,12 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         
         # Obtenir l'état actuel du jeu et les actions valides
         state = env.get_state()
+        env._update_button_states()
         valid_actions = [a for a in PlayerAction if env.action_buttons[a].enabled]
-
+        print('valid_actions', valid_actions)
         # Calculer la force de la main actuelle
         strength = env._evaluate_hand_strength(current_player)
         hand_strengths.append(strength)
-        
         
         # Obtenir l'action choisie par l'agent et la pénalité associée (si l'agent choisit une action invalide, action_chosen est choisie aléatoirement parmi les actions valides et recevra une pénalité)
         action_chosen, penalty_reward = current_agent.get_action(state, epsilon, valid_actions)
@@ -85,7 +85,8 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         # Stocker l'expérience dans la mémoire de l'agent
         current_agent.remember(state, action_chosen, reward + penalty_reward, next_state, 
                              env.current_phase == GamePhase.SHOWDOWN)
-        actions_taken.append(action_chosen)
+        # Store the action for the specific agent
+        actions_taken[f"Agent {env.current_player_idx + 1}"].append(action_chosen)
         
         # Vérifier si un seul joueur est actif (les autres ont abandonné)
         active_players = sum(1 for p in env.players if p.is_active)
@@ -146,7 +147,7 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
     try:
         for episode in range(episodes):
             # Decay epsilon
-            epsilon = np.clip(EPS_DECAY ** episode, 0.01, 1.0)
+            epsilon = np.clip(0.10 * EPS_DECAY ** episode, 0.01, 0.10)
             
             # Initialize game and sync player names with agents
             env = PokerGame()

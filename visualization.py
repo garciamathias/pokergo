@@ -213,7 +213,7 @@ class TrainingVisualizer:
         plt.tight_layout()
         self.metrics_fig.savefig('viz_pdf/training_metrics.jpg')
 
-    def update_plots(self, episode, rewards, wins, actions, hand_strengths, metrics_list=None):
+    def update_plots(self, episode, rewards, wins, actions_dict, hand_strengths, metrics_list=None):
         """Update all plots with new data"""
         self.episodes.append(episode)
         
@@ -223,8 +223,9 @@ class TrainingVisualizer:
             self.wins_data[agent_name].append(wins[i])
             
             # Update action distribution if actions are provided
-            if actions and i < len(actions):
-                self.update_action_distribution(agent_name, actions[i])
+            if actions_dict and agent_name in actions_dict and actions_dict[agent_name]:
+                for action in actions_dict[agent_name]:
+                    self.update_action_distribution(agent_name, action)
             
             # Update hand strength data with win status
             if hand_strengths and i < len(hand_strengths):

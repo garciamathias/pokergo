@@ -40,9 +40,9 @@ class PokerAgent:
     def get_action(self, state, epsilon, valid_actions):
         # Convert valid PlayerActions to numerical indices
         action_map = {
-            PlayerAction.CHECK: 0,
-            PlayerAction.CALL: 1,
-            PlayerAction.FOLD: 2,
+            PlayerAction.FOLD: 0,
+            PlayerAction.CHECK: 1,
+            PlayerAction.CALL: 2,
             PlayerAction.RAISE: 3,
             PlayerAction.ALL_IN: 4
         }
@@ -56,7 +56,9 @@ class PokerAgent:
         if np.random.random() < epsilon:
             # Random exploration with valid actions only
             chosen_index = np.random.choice(valid_indices)
-            return PlayerAction(list(action_map.keys())[list(action_map.values()).index(chosen_index)]), 0
+            # Convert numerical index back to PlayerAction
+            reverse_action_map = {v: k for k, v in action_map.items()}
+            return reverse_action_map[chosen_index], 0
         else:
             # Convert state to tensor and add batch dimension
             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
@@ -80,16 +82,17 @@ class PokerAgent:
                 # Fallback to random valid action with penalty
                 penalty = -0.2  # Strong penalty for invalid prediction
                 chosen_index = np.random.choice(valid_indices)
-                return PlayerAction(list(action_map.keys())[list(action_map.values()).index(chosen_index)]), penalty
             
-            return PlayerAction(list(action_map.keys())[list(action_map.values()).index(chosen_index)]), 0
+            # Convert numerical index back to PlayerAction
+            reverse_action_map = {v: k for k, v in action_map.items()}
+            return reverse_action_map[chosen_index], 0
 
     def remember(self, state, action, reward, next_state, done):        
         # Convert PlayerAction enum to numerical action for training
         action_map = {
-            PlayerAction.CHECK: 0,
-            PlayerAction.CALL: 1,
-            PlayerAction.FOLD: 2,
+            PlayerAction.FOLD: 0,
+            PlayerAction.CHECK: 1,
+            PlayerAction.CALL: 2,
             PlayerAction.RAISE: 3,
             PlayerAction.ALL_IN: 4,
             None: 0
