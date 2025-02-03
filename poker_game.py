@@ -214,6 +214,7 @@ class PokerGame:
         self.last_ai_action_time = 0
         
         self.start_new_hand()
+        self._update_button_states()
 
     def reset(self):
         """
@@ -239,7 +240,7 @@ class PokerGame:
             player.stack = 500  # Reset to starting stack
         
         # Reset button and blinds
-        self.button_position = (self.button_position + 1) % self.num_players
+        self.button_position = (self.button_position + 3) % self.num_players
         sb_pos = (self.button_position + 1) % self.num_players
         bb_pos = (self.button_position + 2) % self.num_players
         
@@ -260,18 +261,16 @@ class PokerGame:
         
         # Reset betting state
         self.last_raiser = None
-        
+
+        self._update_button_states()
+
         return self.get_state()
 
     def start_new_hand(self):
-        """
-        Reset game state and start a new hand.
-        Posts blinds, deals cards, and sets up the initial betting round.
-        """
         # Update blinds before starting new hand
         self.update_blinds()
         
-        # Reset game state
+        # Reset game state variables
         self.pot = 0
         self.community_cards = []
         self.current_phase = GamePhase.PREFLOP
@@ -279,66 +278,68 @@ class PokerGame:
         self.last_raiser = None
         self.round_number = 0
         
-        # Reset player states and check for bankrupted players
-        active_players_count = 0
+        # Build a new list of active players (only those with sufficient funds)
+        active_players = []
         for player in self.players:
             player.cards = []
             player.current_bet = 0
             player.has_acted = False
             if player.stack >= self.big_blind:
                 player.is_active = True
-                active_players_count += 1
+                active_players.append(player)
             else:
                 player.is_active = False
                 print(f"{player.name} is out of the game (insufficient funds: ${player.stack})")
         
-        # Check if we have enough players to continue
-        if active_players_count < 2:
-            print(f"Not enough players with sufficient funds ({active_players_count}). Need at least 2 players.")
+        # If less than 2 players are active, you might choose to reset or end the game
+        if len(active_players) < 3: # Head's up a fix avant de le permettre 
+            print("Not enough players to continue.")
             self.reset()
             return
         
-        # Move button position
+        # IMPORTANT: Update self.num_players and/or the players list to use only active players
+        self.players = active_players
+        self.num_players = len(active_players)
+        
+        # Now update the button position appropriately.
+        # For example, you might decide to rotate the dealer among the active players:
         self.button_position = (self.button_position + 1) % self.num_players
         
-        # En heads-up (2 joueurs actifs), le bouton est la petite blind
-        active_players = [p for p in self.players if p.is_active]
-        if len(active_players) == 2:
-            # Le bouton (petite blind) agit en premier preflop, mais reçoit ses cartes en dernier
-            sb_pos = self.button_position  # Le bouton est la petite blind
+        # Post blinds and deal cards based on the active players list.
+        if self.num_players == 2:
+            # Heads-up: the button posts the small blind, the other posts the big blind.
+            sb_pos = self.button_position
             bb_pos = (self.button_position + 1) % self.num_players
-            
-            # Post blinds
             self.players[sb_pos].stack -= self.small_blind
             self.players[sb_pos].current_bet = self.small_blind
             self.players[bb_pos].stack -= self.big_blind
             self.players[bb_pos].current_bet = self.big_blind
-            
             self.pot = self.small_blind + self.big_blind
             
-            # Deal cards - BB reçoit en premier, SB en dernier
+            # Deal cards appropriately.
             self.deal_cards_heads_up(bb_pos, sb_pos)
             
-            # En preflop, BB agit en premier
+            # Preflop: big blind acts first.
             self.current_player_idx = bb_pos
         else:
-            # Plus de 2 joueurs - logique normale
+            # For more than 2 players, use the standard procedure.
             sb_pos = (self.button_position + 1) % self.num_players
             bb_pos = (self.button_position + 2) % self.num_players
             
-            # Post blinds
             self.players[sb_pos].stack -= self.small_blind
             self.players[sb_pos].current_bet = self.small_blind
             self.players[bb_pos].stack -= self.big_blind
             self.players[bb_pos].current_bet = self.big_blind
-            
             self.pot = self.small_blind + self.big_blind
             
-            # Deal cards normalement
             self.deal_cards()
             
-            # Set starting player (UTG)
+            # UTG acts first.
             self.current_player_idx = (bb_pos + 1) % self.num_players
+
+        self._update_button_states()
+        return True
+
 
     def deal_cards_heads_up(self, bb_pos: int, sb_pos: int):
         """
@@ -511,12 +512,20 @@ class PokerGame:
         """
         Process a player's action during their turn.
         """
+        # Check if player has sufficient funds for any action
+        if player.stack <= 0:
+            print(f"{player.name} has insufficient funds - marking as inactive")
+            player.is_active = False
+            self._next_player()
+            return False
+        
         # Don't process actions during showdown
         if self.current_phase == GamePhase.SHOWDOWN:
             return action
             
         # Debug print for action start
         print(f"\n=== Action by {player.name} ===")
+        print(f"Player activity: {player.is_active}")
         print(f"Action: {action.value}")
         print(f"Current phase: {self.current_phase}")
         print(f"Current pot: ${self.pot}")
@@ -884,7 +893,11 @@ class PokerGame:
                 # After display duration, start new hand
                 self.winner_info = None
                 self.button_position = (self.button_position + 1) % self.num_players
-                self.start_new_hand()
+                active_players = [p for p in self.players if p.stack >= self.big_blind]
+                if len(active_players) > 1:
+                    self.start_new_hand()
+                else:
+                    self.reset()
 
         # Ajouter l'affichage des blindes actuelles
         blind_text = self.font.render(f"Blindes: {self.small_blind}/{self.big_blind}", True, (255, 255, 255))
@@ -938,7 +951,7 @@ class PokerGame:
         Skips players who have folded.
         """
         self.current_player_idx = (self.current_player_idx + 1) % self.num_players
-        while not self.players[self.current_player_idx].is_active:
+        while not self.players[self.current_player_idx].is_active or self.players[self.current_player_idx].stack <= 0 :
             self.current_player_idx = (self.current_player_idx + 1) % self.num_players
 
     def _update_button_states(self):
@@ -947,24 +960,36 @@ class PokerGame:
         """
         current_player = self.players[self.current_player_idx]
         
-        # First check if all active players are all-in
-        active_players = [p for p in self.players if p.is_active]
-        all_in_players = [p for p in active_players if p.stack == 0]
-        
-        if len(all_in_players) == len(active_players) and len(active_players) > 1:
-            # Disable all buttons as we should auto-proceed to showdown
-            for button in self.action_buttons.values():
-                button.enabled = False
+        # First check if player has insufficient funds
+        if current_player.stack <= 0:
+            # Mark player as inactive and move to next player
+            print(f"{current_player.name} has insufficient funds - marking as inactive")
+            current_player.is_active = False
+            self._next_player()
             return
         
         # Enable all buttons by default
         for button in self.action_buttons.values():
             button.enabled = True
         
-        # Disable check if there's a bet to call
-        if current_player.current_bet < self.current_bet:
-            self.action_buttons[PlayerAction.CHECK].enabled = False
-        
+        # Preflop specific rules
+        if self.current_phase == GamePhase.PREFLOP:
+            # Under the Gun (first to act preflop) can never check
+            if current_player.position == self.button_position:  # UTG position
+                self.action_buttons[PlayerAction.CHECK].enabled = False
+            # Small Blind can only check if no raises
+            elif current_player.position == (self.button_position + 1) % self.num_players:  # SB position
+                if self.current_bet > self.small_blind:
+                    self.action_buttons[PlayerAction.CHECK].enabled = False
+            # Big Blind can only check if no raises
+            elif current_player.position == (self.button_position + 2) % self.num_players:  # BB position
+                if self.current_bet > self.big_blind:
+                    self.action_buttons[PlayerAction.CHECK].enabled = False
+        else:
+            # Post-flop rules
+            # Can't check if there's a bet to call
+            if current_player.current_bet < self.current_bet:
+                self.action_buttons[PlayerAction.CHECK].enabled = False
         # Disable call if no bet to call or not enough chips
         if current_player.current_bet == self.current_bet:
             self.action_buttons[PlayerAction.CALL].enabled = False
@@ -984,9 +1009,9 @@ class PokerGame:
         if self.action_buttons[PlayerAction.CHECK].enabled:
             self.action_buttons[PlayerAction.FOLD].enabled = False
         
-        # All-in toujours disponible si le joueur a des jetons
+        # All-in always available if player has chips
         self.action_buttons[PlayerAction.ALL_IN].enabled = current_player.stack > 0
-    
+
     def get_state(self):
         """
         Get the current state of the game for the RL agent.
@@ -1247,6 +1272,10 @@ class PokerGame:
         """
         Évalue la force relative d'une main (0 à 1)
         """
+        # Return 0 strength if player has folded or has no cards
+        if not player.is_active or not player.cards:
+            return 0.0
+        
         if self.current_phase == GamePhase.PREFLOP:
             return self._evaluate_preflop_strength(player.cards)
         
@@ -1259,6 +1288,10 @@ class PokerGame:
         """
         Évalue la force d'une main preflop
         """
+        # Safety check for empty or incomplete hands
+        if not cards or len(cards) < 2:
+            return 0.0
+        
         card1, card2 = cards
         # Paires
         if card1.value == card2.value:
@@ -1283,14 +1316,11 @@ class PokerGame:
     def _evaluate_equity(self, player) -> float:
         """
         Calculate the pot equity (expected value) for a player's hand.
-        Takes into account:
-        - Current hand strength
-        - Pot size
-        - Position
-        - Number of active players
-        Returns:
-            float: Equity value between 0 and 1
         """
+        # Return 0 equity if player has folded or has no cards
+        if not player.is_active or not player.cards:
+            return 0.0
+        
         # Get base equity from hand strength
         hand_strength = self._evaluate_hand_strength(player)
         
@@ -1356,7 +1386,7 @@ class PokerGame:
                     if event.key == pygame.K_SPACE:
                         self.start_new_hand()
                     if event.key == pygame.K_r:
-                        self.reset_game()
+                        self.reset()
                     if event.key == pygame.K_s:
                         state = self.get_state()
                         print('--------------------------------')

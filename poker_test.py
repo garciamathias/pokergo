@@ -14,7 +14,7 @@ EPISODES = 10000
 GAMMA = 0.9985
 ALPHA = 0.003
 EPS_DECAY = 0.9998
-STATE_SIZE = 32
+STATE_SIZE = 166
 RENDERING = True
 
 def set_seed(seed=42):
@@ -31,16 +31,7 @@ def set_seed(seed=42):
 set_seed(42)
 
 # Function to run a single episode
-def run_test_games(agent_list):
-    # Initialize game environment
-    env = PokerGame()
-    env.reset()
-    
-    # Sync player names and human status with agents
-    for i, agent in enumerate(agent_list):
-        env.players[i].name = agent.name
-        env.players[i].is_human = agent.is_human
-    
+def run_test_games(agent_list, env):
     # Main game loop
     while True:
         # Get current player and corresponding agent
@@ -51,6 +42,7 @@ def run_test_games(agent_list):
         # Get current state and valid actions
         state = env.get_state()
         valid_actions = [a for a in PlayerAction if env.action_buttons[a].enabled]
+        print('valid_actions', valid_actions)
         
         # Handle AI or human turn
         if not current_player.is_human:
@@ -142,14 +134,21 @@ if __name__ == "__main__":
     # Run game loop
     try:
         episode = 0
+        env = PokerGame()
+        for i, agent in enumerate(agent_list):
+            env.players[i].name = agent.name
+            env.players[i].is_human = agent.is_human
         while True:
+            if env.players[i].stack <= env.big_blind:
+                env.players[i].is_active = False
             # Initialize game and sync player names with agents
-            env = PokerGame()
-            for i, agent in enumerate(agent_list):
-                env.players[i].name = agent.name
-                env.players[i].is_human = agent.is_human
-            
-            run_test_games(agent_list)
+            active_players = [p for p in env.players if p.stack >= env.big_blind]
+            print('len(active_players)', len(active_players))
+            if len(active_players) > 2: # Head's up a fix avant de le permettre 
+                env.start_new_hand()
+            else:
+                env.reset()
+            run_test_games(agent_list, env)
             episode += 1
     except KeyboardInterrupt:
         print("\nGame ended by user")
