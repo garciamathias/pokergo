@@ -60,6 +60,7 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
 
     # Main game loop continues as before...
     while not env.current_phase == GamePhase.SHOWDOWN:
+        
         # Récupérer le joueur actuel et l'agent correspondant
         current_player = env.players[env.current_player_idx]
         current_agent = agent_list[env.current_player_idx]

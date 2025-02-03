@@ -291,74 +291,63 @@ class PokerGame:
                 player.is_active = False
                 print(f"{player.name} is out of the game (insufficient funds: ${player.stack})")
         
-        # If less than 2 players are active, you might choose to reset or end the game
-        if len(active_players) < 3: # Head's up a fix avant de le permettre 
+        # If less than 2 players are active, reset the game
+        if len(active_players) < 2:
             print("Not enough players to continue.")
             self.reset()
             return
         
-        # IMPORTANT: Update self.num_players and/or the players list to use only active players
-        self.players = active_players
-        self.num_players = len(active_players)
-        
-        # Now update the button position appropriately.
-        # For example, you might decide to rotate the dealer among the active players:
+        # Move button position
         self.button_position = (self.button_position + 1) % self.num_players
+        while not self.players[self.button_position].is_active:
+            self.button_position = (self.button_position + 1) % self.num_players
         
-        # Post blinds and deal cards based on the active players list.
-        if self.num_players == 2:
-            # Heads-up: the button posts the small blind, the other posts the big blind.
+        # Count active players for blind structure
+        num_active_players = sum(1 for p in self.players if p.is_active)
+        
+        if num_active_players == 2:
+            # Heads-up rules: button posts SB and acts first preflop
             sb_pos = self.button_position
-            bb_pos = (self.button_position + 1) % self.num_players
+            bb_pos = self._next_active_position(sb_pos)
+            
+            # Post blinds
             self.players[sb_pos].stack -= self.small_blind
             self.players[sb_pos].current_bet = self.small_blind
             self.players[bb_pos].stack -= self.big_blind
             self.players[bb_pos].current_bet = self.big_blind
+            
             self.pot = self.small_blind + self.big_blind
-            
-            # Deal cards appropriately.
-            self.deal_cards_heads_up(bb_pos, sb_pos)
-            
-            # Preflop: big blind acts first.
-            self.current_player_idx = bb_pos
-        else:
-            # For more than 2 players, use the standard procedure.
-            sb_pos = (self.button_position + 1) % self.num_players
-            bb_pos = (self.button_position + 2) % self.num_players
-            
-            self.players[sb_pos].stack -= self.small_blind
-            self.players[sb_pos].current_bet = self.small_blind
-            self.players[bb_pos].stack -= self.big_blind
-            self.players[bb_pos].current_bet = self.big_blind
-            self.pot = self.small_blind + self.big_blind
-            
             self.deal_cards()
             
-            # UTG acts first.
-            self.current_player_idx = (bb_pos + 1) % self.num_players
+            # In heads-up, button (SB) acts first preflop
+            self.current_player_idx = sb_pos
+        else:
+            # Normal 3-player structure
+            sb_pos = self._next_active_position(self.button_position)
+            bb_pos = self._next_active_position(sb_pos)
+            
+            self.players[sb_pos].stack -= self.small_blind
+            self.players[sb_pos].current_bet = self.small_blind
+            self.players[bb_pos].stack -= self.big_blind
+            self.players[bb_pos].current_bet = self.big_blind
+            
+            self.pot = self.small_blind + self.big_blind
+            self.deal_cards()
+            
+            # UTG acts first preflop
+            self.current_player_idx = self._next_active_position(bb_pos)
 
         self._update_button_states()
         return True
 
-
-    def deal_cards_heads_up(self, bb_pos: int, sb_pos: int):
+    def _next_active_position(self, current_pos):
         """
-        Deal cards specifically for heads-up play.
-        BB receives cards first, SB (button) receives last.
+        Find the next active player position from the given position.
         """
-        self.deck = self._create_deck()
-        
-        # Clear previous hands
-        for player in self.players:
-            player.cards = []
-        self.community_cards = []
-        
-        # Deal two cards to each active player in the correct order
-        for _ in range(2):
-            # BB gets cards first
-            self.players[bb_pos].cards.append(self.deck.pop())
-            # SB (button) gets cards last
-            self.players[sb_pos].cards.append(self.deck.pop())
+        next_pos = (current_pos + 1) % self.num_players
+        while not self.players[next_pos].is_active:
+            next_pos = (next_pos + 1) % self.num_players
+        return next_pos
 
     def evaluate_hand(self, player: Player) -> Tuple[HandRank, List[int]]:
         """
@@ -951,7 +940,7 @@ class PokerGame:
         Skips players who have folded.
         """
         self.current_player_idx = (self.current_player_idx + 1) % self.num_players
-        while not self.players[self.current_player_idx].is_active or self.players[self.current_player_idx].stack <= 0 :
+        while not self.players[self.current_player_idx].is_active:
             self.current_player_idx = (self.current_player_idx + 1) % self.num_players
 
     def _update_button_states(self):

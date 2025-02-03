@@ -34,8 +34,21 @@ set_seed(42)
 def run_test_games(agent_list, env):
     # Main game loop
     while True:
+        # Check if game should end (only one player with chips)
+        active_players = [p for p in env.players if p.stack >= env.big_blind]
+        if len(active_players) < 2:
+            print("Game over - only one player remains with chips")
+            env.reset()
+            return
+
         # Get current player and corresponding agent
         current_player = env.players[env.current_player_idx]
+        
+        # Skip if player is not active
+        if not current_player.is_active:
+            env._next_player()
+            continue
+            
         print(f"Current player: {current_player.name}")
         current_agent = agent_list[env.current_player_idx]
         
@@ -97,7 +110,7 @@ def run_test_games(agent_list, env):
             pygame.display.flip()
             pygame.time.wait(2000)  # Show final state for 2 seconds
             break
-    
+
     # Start new hand after delay
     pygame.time.wait(1000)
     return
@@ -133,23 +146,28 @@ if __name__ == "__main__":
 
     # Run game loop
     try:
-        episode = 0
         env = PokerGame()
+        # Initialize game and sync player names with agents
         for i, agent in enumerate(agent_list):
             env.players[i].name = agent.name
             env.players[i].is_human = agent.is_human
+            
         while True:
-            if env.players[i].stack <= env.big_blind:
-                env.players[i].is_active = False
-            # Initialize game and sync player names with agents
+            # Check active players before starting new hand
             active_players = [p for p in env.players if p.stack >= env.big_blind]
-            print('len(active_players)', len(active_players))
-            if len(active_players) > 2: # Head's up a fix avant de le permettre 
-                env.start_new_hand()
-            else:
+            
+            if len(active_players) < 2:
+                print("Game over - resetting game")
                 env.reset()
+                # Re-sync player states after reset
+                for i, agent in enumerate(agent_list):
+                    env.players[i].name = agent.name
+                    env.players[i].is_human = agent.is_human
+            else:
+                env.start_new_hand()
+                
             run_test_games(agent_list, env)
-            episode += 1
+            
     except KeyboardInterrupt:
         print("\nGame ended by user")
     finally:
