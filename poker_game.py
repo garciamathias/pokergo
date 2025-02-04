@@ -1246,7 +1246,7 @@ class PokerGame:
         state.extend(flattened_actions)  
 
         # 13. Estimation de la probabilité de victoire
-        active_players = [p for p in self.players if p.is_active]
+        active_players = [p for p in self.players if p.is_active and not p.has_folded]
         num_opponents = len(active_players) - 1
         
         if num_opponents <= 0:

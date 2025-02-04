@@ -13,8 +13,8 @@ matplotlib.use('Agg')
 EPISODES = 10000
 GAMMA = 0.9985
 ALPHA = 0.003
-EPS_DECAY = 1 # 0.9998
-STATE_SIZE = 166
+EPS_DECAY = 0.9998
+STATE_SIZE = 169
 RENDERING = True
 
 def set_seed(seed=42):
@@ -47,7 +47,7 @@ def load_trained_agents():
             action_size=5,
             gamma=0.9985,
             learning_rate=0.001,
-            load_model=False,  # Charger le modèle sauvegardé
+            load_model=True,  # Charger le modèle sauvegardé
             load_path=f"saved_models/poker_agent_player_{i+1}.pth"
         )
         agent.name = f"player_{i+1}"

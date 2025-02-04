@@ -17,7 +17,8 @@ EPISODES = 10000
 GAMMA = 0.9985
 ALPHA = 0.001
 EPS_DECAY = 0.9999
-STATE_SIZE = 166
+START_EPS = 1.0
+STATE_SIZE = 169
 RENDERING = False
 FPS = 30
 
@@ -206,7 +207,7 @@ def main_training_loop(agent_list, episodes, rendering, render_every):
     try:
         for episode in range(episodes):
             # Décroissance d'epsilon
-            epsilon = np.clip(0.10 * EPS_DECAY ** episode, 0.01, 0.10)
+            epsilon = np.clip(START_EPS * EPS_DECAY ** episode, 0.01, START_EPS)
             
             # Exécuter l'épisode et obtenir les résultats incluant les métriques
             reward_list, winning_list, actions_taken, hand_strengths, metrics_list = run_episode(
