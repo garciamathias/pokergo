@@ -2,6 +2,7 @@
 poker_env/
 venv/
 ENV/
+.venv/
 
 # Distribution / packaging
 dist/

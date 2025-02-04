@@ -1,2 +1,4 @@
-# Aucune dépendance externe requise 
-pygame==2.5.2 
+pygame==2.5.2
+numpy>=1.24.0
+torch>=2.0.0
+matplotlib>=3.7.0 

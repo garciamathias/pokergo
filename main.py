@@ -19,7 +19,7 @@ for i in range(3):
     )
     agent.name = f"player_{i+1}"
     agent_list.append(agent)
-    agent.is_human = True
+    agent.is_human = True # Montrer toutes les cartes
 
 # Start the training loop
 main_training_loop(agent_list, episodes=EPISODES, rendering=RENDERING, render_every=1)

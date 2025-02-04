@@ -136,7 +136,7 @@ class Player:
         self.position = position
         self.cards: List[Card] = []
         self.is_active = True  # Indique si le joueur a assez de jetons pour jouer
-        self.have_folded = False  # Indique si le joueur s'est couché pendant la main en cours
+        self.has_folded = False  # Indique si le joueur s'est couché pendant la main en cours
         self.current_bet = 0
         self.is_human = True
         self.has_acted = False
@@ -151,7 +151,7 @@ class PokerGame:
     """
     Classe principale qui gère l'état et la logique du jeu de poker.
     """
-    def __init__(self, num_players: int = 3, small_blind: int = 10, big_blind: int = 20):
+    def __init__(self, num_players: int = 3):
         """
         Initialise la partie de poker avec les joueurs et les blindes.
         
@@ -167,7 +167,7 @@ class PokerGame:
         self.screen = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
         pygame.display.set_caption("3-Max Poker")
         self.font = pygame.font.SysFont('Arial', 24)
-        self.num_players = 3
+        self.num_players = num_players
         
         # Structure des blindes avec progression
         self.blind_levels = [
@@ -246,7 +246,7 @@ class PokerGame:
             player.cards = []
             player.current_bet = 0
             player.is_active = True
-            player.have_folded = False
+            player.has_folded = False
             player.has_acted = False
             player.stack = 500  # Réinitialiser au stack de départ
         
@@ -307,7 +307,7 @@ class PokerGame:
             player.cards = []
             player.current_bet = 0
             player.has_acted = False
-            player.have_folded = False
+            player.has_folded = False
             if player.stack >= self.big_blind:
                 player.is_active = True
                 active_players.append(player)
@@ -385,7 +385,7 @@ class PokerGame:
             next_pos = (next_pos + 1) % self.num_players
         return next_pos
 
-    def evaluate_hand(self, player: Player) -> Tuple[HandRank, List[int]]:
+    def evaluate_final_hand(self, player: Player) -> Tuple[HandRank, List[int]]:
         """
         Évalue la meilleure main possible d'un joueur avec les cartes communes.
         
@@ -460,13 +460,75 @@ class PokerGame:
         
         return (HandRank.HIGH_CARD, sorted(values, reverse=True)[:5])
 
+    def evaluate_current_hand(self, player) -> Tuple[HandRank, List[int]]:
+        """
+        Évalue la main actuelle d'un joueur avec les cartes communes disponibles meme si il y en a moins de 5.
+        
+        Args:
+            player (Player): Le joueur dont on évalue la main
+        """
+        # Si le joueur n'a pas de cartes ou a foldé
+        if not player.cards or player.has_folded:
+            return (HandRank.HIGH_CARD, [0])
+        
+        # Obtenir toutes les cartes disponibles
+        all_cards = player.cards + self.community_cards
+        values = [card.value for card in all_cards]
+        suits = [card.suit for card in all_cards]
+        
+        # Au pré-flop, évaluer uniquement les cartes du joueur
+        if self.current_phase == GamePhase.PREFLOP:
+            # Paire de départ
+            if player.cards[0].value == player.cards[1].value:
+                return (HandRank.PAIR, [player.cards[0].value])
+            # Cartes hautes
+            return (HandRank.HIGH_CARD, sorted([c.value for c in player.cards], reverse=True))
+        
+        # Compter les occurrences des valeurs et couleurs
+        value_counts = Counter(values)
+        suit_counts = Counter(suits)
+        
+        # Vérifier les combinaisons possibles avec les cartes disponibles
+        # Paire
+        pairs = [v for v, count in value_counts.items() if count >= 2]
+        if pairs:
+            if len(pairs) >= 2:  # Double paire
+                pairs.sort(reverse=True)
+                kicker = max(v for v in values if v not in pairs[:2])
+                return (HandRank.TWO_PAIR, pairs[:2] + [kicker])
+            # Simple paire
+            kickers = sorted([v for v in values if v != pairs[0]], reverse=True)[:3]
+            return (HandRank.PAIR, pairs + kickers)
+        
+        # Brelan
+        trips = [v for v, count in value_counts.items() if count >= 3]
+        if trips:
+            kickers = sorted([v for v in values if v != trips[0]], reverse=True)[:2]
+            return (HandRank.THREE_OF_A_KIND, [trips[0]] + kickers)
+        
+        # Couleur potentielle (4 cartes de la même couleur)
+        flush_suit = next((suit for suit, count in suit_counts.items() if count >= 4), None)
+        if flush_suit:
+            flush_cards = sorted([card.value for card in all_cards if card.suit == flush_suit], reverse=True)
+            if len(flush_cards) >= 5:
+                return (HandRank.FLUSH, flush_cards[:5])
+        
+        # Quinte potentielle
+        unique_values = sorted(set(values))
+        for i in range(len(unique_values) - 3):
+            if unique_values[i+3] - unique_values[i] == 3:  # 4 cartes consécutives
+                return (HandRank.STRAIGHT, [unique_values[i+3]])
+        
+        # Si aucune combinaison, retourner la plus haute carte
+        return (HandRank.HIGH_CARD, sorted(values, reverse=True)[:5])
+
     def check_round_completion(self):
         """
         Vérifie si le tour d'enchères actuel est terminé.
         Un tour est terminé quand tous les joueurs actifs ont misé le même montant.
         """
         # Ne considérer que les joueurs actifs et n'ayant pas fold
-        active_players = [p for p in self.players if p.is_active and not p.have_folded]
+        active_players = [p for p in self.players if p.is_active and not p.has_folded]
         
         # S'il ne reste qu'un joueur, le tour est terminé
         if len(active_players) == 1:
@@ -572,7 +634,7 @@ class PokerGame:
         
         # Process the action
         if action == PlayerAction.FOLD:
-            player.have_folded = True
+            player.has_folded = True
             print(f"{player.name} folds")
             
         elif action == PlayerAction.CHECK:
@@ -622,7 +684,7 @@ class PokerGame:
         print(f"Active players: {sum(1 for p in self.players if p.is_active)}")
         
         # Check for all-in situations after the action
-        active_players = [p for p in self.players if p.is_active and not p.have_folded]
+        active_players = [p for p in self.players if p.is_active and not p.has_folded]
         all_in_players = [p for p in active_players if p.stack == 0]
         
         # Check if only one player remains (others folded or inactive)
@@ -650,7 +712,7 @@ class PokerGame:
                 print(f"Advanced to {self.current_phase}")
                 # Réinitialiser has_acted pour tous les joueurs actifs et non fold au début d'une nouvelle phase
                 for p in self.players:
-                    if p.is_active and not p.have_folded:
+                    if p.is_active and not p.has_folded:
                         p.has_acted = False
         else:
             self._next_player()
@@ -665,7 +727,7 @@ class PokerGame:
         """
         print("\n=== SHOWDOWN ===")
         self.current_phase = GamePhase.SHOWDOWN
-        active_players = [p for p in self.players if p.is_active and not p.have_folded]
+        active_players = [p for p in self.players if p.is_active and not p.has_folded]
         print(f"Active players in showdown: {[p.name for p in active_players]}")
         
         # Disable all action buttons during showdown
@@ -684,7 +746,7 @@ class PokerGame:
                 self.community_cards.append(self.deck.pop())
             
             # Evaluate hands and find winner
-            player_hands = [(player, self.evaluate_hand(player)) for player in active_players]
+            player_hands = [(player, self.evaluate_final_hand(player)) for player in active_players]
             for player, (hand_rank, _) in player_hands:
                 print(f"{player.name}'s hand: {[str(card) for card in player.cards]}")
                 print(f"{player.name}'s hand rank: {hand_rank.name}")
@@ -813,7 +875,7 @@ class PokerGame:
         self.screen.blit(name_text, (player.x - 50, player.y - 40))
         
         # Draw player cards
-        if player.is_active and not player.have_folded and player.cards:
+        if player.is_active and not player.has_folded and player.cards:
             if player.is_human or self.current_phase == GamePhase.SHOWDOWN:
                 for i, card in enumerate(player.cards):
                     self._draw_card(card, player.x + i * 60, player.y)
@@ -996,7 +1058,7 @@ class PokerGame:
         Passe au prochain joueur actif et n'ayant pas fold dans le sens horaire.
         """
         self.current_player_idx = (self.current_player_idx + 1) % self.num_players
-        while not self.players[self.current_player_idx].is_active or self.players[self.current_player_idx].have_folded:
+        while not self.players[self.current_player_idx].is_active or self.players[self.current_player_idx].has_folded:
             self.current_player_idx = (self.current_player_idx + 1) % self.num_players
 
     def _update_button_states(self):
@@ -1053,7 +1115,7 @@ class PokerGame:
         current_player = self.players[self.current_player_idx]
         state = []
 
-        # Map suits to numbers ♠, ♥, ♦, ♣
+        # Correspondance des couleurs avec des nombres ♠, ♥, ♦, ♣
         suit_map = {
             "♠" : 0,
             "♥" : 1,
@@ -1061,45 +1123,46 @@ class PokerGame:
             "♣" : 3
         }
 
-        # 1. Cards information (one-hot encoded)
-        # Player's cards
+        # 1. Informations sur les cartes (encodage one-hot)
+        # Cartes du joueur
         for card in current_player.cards:
             value_range = [0.01] * 13
             value_range[card.value - 2] = 1
-            state.extend(value_range)  # Extend instead of append for value
+            state.extend(value_range)  # Extension pour la valeur
             suit_range = [0.01] * 4
             suit_range[suit_map[card.suit]] = 1
-            state.extend(suit_range)  # Extend instead of append for suit
+            state.extend(suit_range)  # Extension pour la couleur
         
-        # Add padding for missing player cards
+        # Ajout de remplissage pour les cartes manquantes du joueur
         remaining_player_cards = 2 - len(current_player.cards)
         for _ in range(remaining_player_cards):
-            state.extend([0.01] * 13)  # Pad card values
-            state.extend([0.01] * 4)   # Pad card suits
+            state.extend([0.01] * 13)  # Remplissage des valeurs
+            state.extend([0.01] * 4)   # Remplissage des couleurs
         
-        # Community cards
+        # Cartes communes
         for i, card in enumerate(self.community_cards):
             value_range = [0.01] * 13
             value_range[card.value - 2] = 1
-            state.extend(value_range)  # Extend instead of append
+            state.extend(value_range)  # Extension
             suit_range = [0.01] * 4
             suit_range[suit_map[card.suit]] = 1
-            state.extend(suit_range)  # Extend instead of append
+            state.extend(suit_range)  # Extension
         
-        # Add padding for missing community cards
+        # Ajout de remplissage pour les cartes communes manquantes
         remaining_community_cards = 5 - len(self.community_cards)
         for _ in range(remaining_community_cards):
-            state.extend([0.01] * 13)  # Pad card values
-            state.extend([0.01] * 4)   # Pad card suits
+            state.extend([0.01] * 13)  # Remplissage des valeurs
+            state.extend([0.01] * 4)   # Remplissage des couleurs
         
-        # 2. Current hand rank (if enough cards are visible)
+        # 2. Rang de la main actuelle (si assez de cartes sont visibles)
         if len(current_player.cards) + len(self.community_cards) >= 5:
-            hand_rank, _ = self.evaluate_hand(current_player)
-            state.append(hand_rank.value / len(HandRank))  # Normalize rank value (size = 1)
+            hand_rank, _ = self.evaluate_final_hand(current_player)
+            state.append(hand_rank.value / len(HandRank))  # Normalisation de la valeur du rang (taille = 1)
         else:
-            state.append(-1)  # No hand rank available yet
+            hand_rank, _ = self.evaluate_current_hand(current_player)
+            state.append(hand_rank.value / len(HandRank))  # Normalisation de la valeur du rang (taille = 1)
 
-        # 3. Round information
+        # 3. Informations sur le tour
         phase_values = {
             GamePhase.PREFLOP: 0,
             GamePhase.FLOP: 1,
@@ -1112,41 +1175,45 @@ class PokerGame:
         phase_range[phase_values[self.current_phase]] = 1
         state.extend(phase_range)
 
-        # 4. Round number
-        state.append(self.round_number)  # Normalize round number (size = 1)
+        # 4. Numéro du tour
+        state.append(self.round_number)  # Normalisation du numéro de tour (taille = 1)
 
-        # 5. Current bet normalized by big blind
-        state.append(self.current_bet / self.big_blind)  # Normalize bet (size = 1)
+        # 5. Mise actuelle normalisée par la grosse blinde
+        state.append(self.current_bet / self.big_blind)  # Normalisation de la mise (taille = 1)
 
-        # 6. Money left (stack sizes normalized by initial stack)
-        initial_stack = 200 * self.big_blind
+        # 6. Argent restant (tailles des stacks normalisées par le stack initial)
+        initial_stack = self.starting_stack
         for player in self.players:
-            state.append(player.stack / initial_stack) # (size = 3)
+            state.append(player.stack / initial_stack) # (taille = 3)
 
-        # 7. Bets information (normalized by big blind)
+        # 7. Informations sur les mises (normalisées par la grosse blinde)
         for player in self.players:
-            state.append(player.current_bet / initial_stack) # (size = 3)
+            state.append(player.current_bet / initial_stack) # (taille = 3)
 
-        # 8. Activity information (extreme binary: active/folded)
+        # 8. Informations sur l'activité (binaire extrême : actif/ruiné)
         for player in self.players:
-            state.append(1 if player.is_active else -1) # (size = 3)
+            state.append(1 if player.is_active else -1) # (taille = 3)
+        
+        # 9. Informations sur l'activité in game (binaire extrême : en jeu/a foldé)
+        for player in self.players:
+            state.append(1 if player.has_folded else -1) # (taille = 3)
 
-        # 9. Position information (one-hot encoded relative positions)
+        # 10. Informations sur la position (encodage one-hot des positions relatives)
         relative_positions = [0.1] * self.num_players
         relative_pos = (self.current_player_idx - self.button_position) % self.num_players
         relative_positions[relative_pos] = 1
-        state.extend(relative_positions) # (size = 3)
+        state.extend(relative_positions) # (taille = 3)
 
-        # 10. Available actions (extreme binary: available/unavailable)
+        # 11. Actions disponibles (binaire extrême : disponible/indisponible)
         action_availability = []
         for action in PlayerAction:
             if action in self.action_buttons and self.action_buttons[action].enabled:
                 action_availability.append(1)
             else:
                 action_availability.append(-1)
-        state.extend(action_availability) # (size = 3)
+        state.extend(action_availability) # (taille = 3)
 
-        # 11. Previous actions (last action of each player, encoded as one-hot vectors)
+        # 12. Actions précédentes (dernière action de chaque joueur, encodée en vecteurs one-hot)
         action_encoding = {
             None: 0,
             PlayerAction.FOLD: 1,
@@ -1156,61 +1223,61 @@ class PokerGame:
             PlayerAction.ALL_IN: 5
         }
 
-        # Initialize last actions array with zeros
-        last_actions = [[0.1] * 6 for _ in range(self.num_players)]  # 6 possible actions (including None)
+        # Initialisation du tableau des dernières actions avec des zéros
+        last_actions = [[0.1] * 6 for _ in range(self.num_players)]  # 6 actions possibles (y compris None)
 
-        # Process recent actions
+        # Traitement des actions récentes
         for action_text in reversed(self.action_history[-self.num_players:]):
             if ":" in action_text:
                 player_name, action = action_text.split(":")
                 player_idx = int(player_name.split("_")[-1]) - 1
                 action = action.strip()
                 
-                # Find matching action type
+                # Recherche du type d'action correspondant
                 for action_type in PlayerAction:
                     if action_type.value in action:
-                        # Create one-hot encoding
-                        last_actions[player_idx] = [0.1] * 6  # Reset to all zeros
+                        # Création de l'encodage one-hot
+                        last_actions[player_idx] = [0.1] * 6  # Réinitialisation à zéro
                         last_actions[player_idx][action_encoding[action_type]] = 1
                         break
 
-        # Flatten the actions list and add to state
+        # 12. Liste des actions précédentes des 3 joueurs
         flattened_actions = [val for sublist in last_actions for val in sublist]
-        state.extend(flattened_actions)  # (size = num_players * 6)
+        state.extend(flattened_actions)  
 
-        # 12. Win probability estimation
+        # 13. Estimation de la probabilité de victoire
         active_players = [p for p in self.players if p.is_active]
         num_opponents = len(active_players) - 1
         
         if num_opponents <= 0:
-            win_prob = 1.0  # No opponents left
+            win_prob = 1.0  # Plus d'adversaires
         else:
-            # Get hand strength
+            # Obtention de la force de la main
             hand_strength = self._evaluate_hand_strength(current_player)
             
-            # Adjust for number of opponents (2-3)
+            # Ajustement pour le nombre d'adversaires (2-3)
             win_prob = hand_strength ** num_opponents
             
-            # Pre-flop specific adjustment (using Sklansky-Chubukov approximation)
+            # Ajustement spécifique au pré-flop (utilisant l'approximation Sklansky-Chubukov)
             if self.current_phase == GamePhase.PREFLOP:
-                # Reduce confidence in pre-flop estimates
+                # Réduction de la confiance dans les estimations pré-flop
                 win_prob *= 0.8
         
-        state.append(win_prob) # (size = 1)
+        state.append(win_prob) # (taille = 1)
 
-        # 13. Pot odds
+        # 14. Cotes du pot
         call_amount = self.current_bet - current_player.current_bet
         pot_odds = call_amount / (self.pot + call_amount) if (self.pot + call_amount) > 0 else 0
-        state.append(pot_odds) # (size = 1)
+        state.append(pot_odds) # (taille = 1)
 
-        # 14. Equity
+        # 15. Équité
         equity = self._evaluate_equity(current_player)
-        state.append(equity) # (size = 1)
+        state.append(equity) # (taille = 1)
 
-        # 15. Aggression factor
-        state.append(self.number_raise_this_round / 4) # (size = 1)
+        # 16. Facteur d'agressivité
+        state.append(self.number_raise_this_round / 4) # (taille = 1)
 
-        # Before returning, convert to numpy array
+        # Avant de retourner, conversion en tableau numpy
         state = np.array(state, dtype=np.float32)
         return state
 
@@ -1225,22 +1292,21 @@ class PokerGame:
             Tuple[List[float], float]: Nouvel état et récompense
         """
         current_player = self.players[self.current_player_idx]
-        initial_stack = current_player.stack
         reward = 0.0
 
-        # Capture game state before processing the action for pot odds calculation
+        # Capturer l'état du jeu avant de traiter l'action pour le calcul des cotes du pot
         call_amount_before = self.current_bet - current_player.current_bet
         pot_before = self.pot
 
-        # --- Strategic Action Rewards ---
-        # Reward based on action relative to hand strength
+        # --- Récompenses stratégiques des actions ---
+        # Récompense basée sur l'action par rapport à la force de la main
         hand_strength = self._evaluate_hand_strength(current_player)
         pot_potential = self.pot / (self.big_blind * 100)
     
         if action == PlayerAction.RAISE:
-            reward += 0.2 * hand_strength  # Scale reward with hand strength
+            reward += 0.2 * hand_strength  # Ajuster la récompense selon la force de la main
             if hand_strength > 0.7:
-                reward += 0.5 * pot_potential  # Bonus for aggressive play with strong hands
+                reward += 0.5 * pot_potential  # Bonus pour jeu agressif avec main forte
                 
         elif action == PlayerAction.ALL_IN:
             reward += 0.3 * hand_strength
@@ -1248,9 +1314,9 @@ class PokerGame:
                 reward += 1.0 * pot_potential
                 
         elif action == PlayerAction.CALL:
-            reward += 0.1 * min(hand_strength, 0.6)  # Diminished returns for passive play
+            reward += 0.1 * min(hand_strength, 0.6)  # Rendements décroissants pour jeu passif
         
-        elif action == PlayerAction.CHECK: # Penalize check if hand is strong
+        elif action == PlayerAction.CHECK: # Pénaliser le check si la main est forte
             if hand_strength > 0.5:
                 reward -= 0.5 * pot_potential
             else:
@@ -1258,51 +1324,29 @@ class PokerGame:
 
         elif action == PlayerAction.FOLD:
             if hand_strength < 0.2:
-                reward += 0.3  # Reward good folds
+                reward += 0.3  # Récompenser les bons folds
             else:
-                reward -= 0.5  # Penalize folding decent hands
+                reward -= 0.5  # Pénaliser les folds avec bonnes mains
             
-        # --- Positional Bonus ---
-        # Bonus for aggressive actions in late position (button)
+        # --- Bonus de position ---
+        # Bonus pour actions agressives en dernière position (bouton)
         if current_player.position == self.button_position:
             if action in [PlayerAction.RAISE, PlayerAction.ALL_IN]:
                 reward += 0.2
         
-        # Process the action (updates game state)
+        # Traiter l'action (met à jour l'état du jeu)
         self.process_action(current_player, action)
 
-        # --- Pot Odds Evaluation ---
+        # --- Évaluation des cotes du pot ---
         if action == PlayerAction.CALL and call_amount_before > 0:
             total_pot_after_call = pot_before + call_amount_before
             pot_odds = call_amount_before / total_pot_after_call if total_pot_after_call > 0 else 0
             if hand_strength > pot_odds:
-                reward += 0.3  # Mathematically sound call
+                reward += 0.3  # Call mathématiquement justifié
             else:
-                reward -= 0.3  # Poor call considering odds
+                reward -= 0.3  # Mauvais call considérant les cotes
 
         return self.get_state(), reward
-
-    def _evaluate_hand_strength(self, player) -> float:
-        """
-        Évalue la force relative d'une main (0 à 1).
-        
-        Args:
-            player (Player): Le joueur dont on évalue la main
-            
-        Returns:
-            float: Force de la main entre 0 (très faible) et 1 (très forte)
-        """
-        # Return 0 strength if player has folded or has no cards
-        if not player.is_active or not player.cards:
-            return 0.0
-        
-        if self.current_phase == GamePhase.PREFLOP:
-            return self._evaluate_preflop_strength(player.cards)
-        
-        # Évaluer la main complète avec les cartes communes
-        hand = self.evaluate_hand(player)
-        # Normaliser le score entre 0 et 1
-        return hand[0].value / 9  # 9 est la valeur max (ROYAL_FLUSH)
 
     def _evaluate_preflop_strength(self, cards) -> float:
         """
@@ -1314,7 +1358,7 @@ class PokerGame:
         Returns:
             float: Force de la main entre 0 et 1
         """
-        # Safety check for empty or incomplete hands
+        # Vérification de sécurité pour mains vides ou incomplètes
         if not cards or len(cards) < 2:
             return 0.0
         
@@ -1339,6 +1383,83 @@ class PokerGame:
         
         return min(base_score, 1.0)  # Garantir que le score est entre 0 et 1
 
+    def _evaluate_hand_strength(self, player) -> float:
+        """
+        Évalue la force relative d'une main (0 à 1) similaire à _evaluate_preflop_strength 
+        mais avec les cartes communes
+        
+        Args:
+            player (Player): Le joueur dont on évalue la main
+            
+        Returns:
+            float: Force de la main entre 0 (très faible) et 1 (très forte)
+        """
+        # Retourner 0 si le joueur a foldé ou n'a pas de cartes
+        if not player.is_active or not player.cards:
+            return 0.0
+        
+        # Au pré-flop, utiliser l'évaluation spécifique pré-flop
+        if self.current_phase == GamePhase.PREFLOP:
+            return self._evaluate_preflop_strength(player.cards)
+        
+        # Obtenir toutes les cartes disponibles (main + cartes communes)
+        all_cards = player.cards + self.community_cards
+        
+        # Évaluer la main actuelle
+        hand_rank, kickers = self.evaluate_final_hand(player)
+        base_score = hand_rank.value / len(HandRank)  # Score de base normalisé
+        
+        # Bonus/malus selon la phase de jeu et les kickers
+        phase_multiplier = {
+            GamePhase.FLOP: 0.8,   # Moins certain au flop
+            GamePhase.TURN: 0.9,   # Plus certain au turn
+            GamePhase.RIVER: 1.0,  # Certitude maximale à la river
+        }.get(self.current_phase, 1.0)
+        
+        # Calculer le score des kickers (normalisé)
+        kicker_score = sum(k / 14 for k in kickers) / len(kickers) if kickers else 0
+        
+        # Vérifier les tirages possibles
+        draw_potential = 0.0
+        
+        # Compter les cartes de chaque couleur
+        suits = [card.suit for card in all_cards]
+        suit_counts = Counter(suits)
+        
+        # Compter les cartes consécutives
+        values = sorted(set(card.value for card in all_cards))
+        
+        # Tirage couleur
+        flush_draw = any(count == 4 for count in suit_counts.values())
+        if flush_draw:
+            draw_potential += 0.15
+        
+        # Tirage quinte
+        for i in range(len(values) - 3):
+            if values[i+3] - values[i] == 3:  # 4 cartes consécutives
+                draw_potential += 0.15
+                break
+        
+        # Tirage quinte flush
+        if flush_draw and any(values[i+3] - values[i] == 3 for i in range(len(values) - 3)):
+            draw_potential += 0.1
+        
+        # Le potentiel de tirage diminue à mesure qu'on avance dans les phases
+        draw_potential *= {
+            GamePhase.FLOP: 1.0,
+            GamePhase.TURN: 0.5,
+            GamePhase.RIVER: 0.0,
+        }.get(self.current_phase, 0.0)
+        
+        # Calculer le score final
+        final_score = (
+            base_score * 0.7 +      # Score de base (70% du score)
+            kicker_score * 0.2 +    # Score des kickers (20% du score)
+            draw_potential          # Potentiel de tirage (jusqu'à 10% supplémentaires)
+        ) * phase_multiplier
+        
+        return min(1.0, max(0.0, final_score))  # Garantir un score entre 0 et 1
+    
     def _evaluate_equity(self, player) -> float:
         """
         Calcule l'équité au pot pour la main d'un joueur.
