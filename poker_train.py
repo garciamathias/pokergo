@@ -9,19 +9,15 @@ from poker_agents import PokerAgent
 from poker_game import PokerGame, GamePhase, PlayerAction
 import matplotlib
 matplotlib.use('Agg')  # Utiliser le backend Agg qui ne nécessite pas de GUI
-import matplotlib.pyplot as plt
-from collections import deque
-import threading
-import subprocess
 from visualization import TrainingVisualizer, plot_winning_stats
-
-# Hyperparameters
+from typing import List
+# Hyperparamètres
 EPISODES = 10000
 GAMMA = 0.9985
 ALPHA = 0.001
 EPS_DECAY = 0.9999
 STATE_SIZE = 166
-RENDERING = False
+RENDERING = True
 FPS = 1
 
 WINDOW_SIZE = 50  
@@ -29,6 +25,12 @@ PLOT_UPDATE_INTERVAL = 10
 SAVE_INTERVAL = 500 # Sauvegarder les graphiques tous les X épisodes
 
 def set_seed(seed=42):
+    """
+    Fixe les graines aléatoires pour assurer la reproductibilité des résultats.
+    
+    Args:
+        seed (int): La graine à utiliser pour l'initialisation des générateurs aléatoires
+    """
     rd.seed(seed)
     np.random.seed(seed)
     
@@ -39,28 +41,46 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# Function to run a single episode
-def run_episode(agent_list, epsilon, rendering, episode, render_every):
-    # Initialize game environment
-    env = PokerGame()
-    env.reset()
+def run_episode(env: PokerGame, agent_list: List[PokerAgent], epsilon: float, rendering: bool, episode: int, render_every: int):
+    """
+    Exécute un épisode complet du jeu de poker.
     
-    # Sync player names and human status with agents
+    Args:
+        agent_list (List[PokerAgent]): Liste des agents participant à la partie
+        epsilon (float): Paramètre d'exploration pour la politique epsilon-greedy
+        rendering (bool): Active ou désactive le rendu graphique
+        episode (int): Numéro de l'épisode en cours
+        render_every (int): Fréquence de mise à jour du rendu graphique
+    
+    Returns:
+        Tuple: Contient les récompenses finales, la liste des gagnants, les actions prises,
+               la force des mains et les métriques d'entraînement
+    """
+
+    active_players = [p for p in env.players if p.stack >= env.big_blind]
+    if len(active_players) < 3:
+        env.reset()
+    else:
+        env.start_new_hand()
+    
+    # Synchroniser les noms des joueurs et leur statut humain avec les agents
     for i, agent in enumerate(agent_list):
         env.players[i].name = agent.name
         env.players[i].is_human = agent.is_human
     
-    # Initialize cumulative rewards for each player
+    # Initialiser les récompenses cumulatives pour chaque joueur
     cumulative_rewards = [0] * len(agent_list)
-    # Store initial stacks to calculate changes at end
+    # Stocker les stacks initiaux (en tenant compte des blindes déjà déduites)
     initial_stacks = [player.stack for player in env.players]
-    # Modify the actions_taken to track per agent
-    actions_taken = {f"Agent {i+1}": [] for i in range(len(agent_list))}
-    hand_strengths = []
+    initial_stacks[env.sb_pos] += env.small_blind
+    initial_stacks[env.bb_pos] += env.big_blind
 
-    # Main game loop continues as before...
+    # Modifier les actions_taken pour suivre par agent
+    actions_taken = {f"Agent {i+1}": [] for i in range(len(agent_list))}
+    hand_strengths = [0] * len(agent_list)  # Initialize with zeros for all players
+
+    # Boucle principale du jeu
     while not env.current_phase == GamePhase.SHOWDOWN:
-        
         # Récupérer le joueur actuel et l'agent correspondant
         current_player = env.players[env.current_player_idx]
         current_agent = agent_list[env.current_player_idx]
@@ -70,26 +90,29 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
         env._update_button_states()
         valid_actions = [a for a in PlayerAction if env.action_buttons[a].enabled]
         print('valid_actions', valid_actions)
-        # Calculer la force de la main actuelle
-        strength = env._evaluate_hand_strength(current_player)
-        hand_strengths.append(strength)
         
-        # Obtenir l'action choisie par l'agent et la pénalité associée (si l'agent choisit une action invalide, action_chosen est choisie aléatoirement parmi les actions valides et recevra une pénalité)
-        action_chosen, penalty_reward = current_agent.get_action(state, epsilon, valid_actions)
-        cumulative_rewards[env.current_player_idx] += penalty_reward
+        # Calculate and store hand strength for current player
+        strength = env._evaluate_hand_strength(current_player)
+        hand_strengths[env.current_player_idx] = strength  # Store strength for current player
+        
+        # Obtenir l'action choisie par l'agent et la pénalité associée
+        action_chosen = current_agent.get_action(state, epsilon, valid_actions)
         
         # Exécuter l'action et obtenir le nouvel état et la récompense
         next_state, reward = env.step(action_chosen)
         cumulative_rewards[env.current_player_idx] += reward
         
+        # Update current bet display for the player who just acted
+        current_player.current_bet = env.current_bet
+        
         # Stocker l'expérience dans la mémoire de l'agent
-        current_agent.remember(state, action_chosen, reward + penalty_reward, next_state, 
+        current_agent.remember(state, action_chosen, reward, next_state, 
                              env.current_phase == GamePhase.SHOWDOWN)
-        # Store the action for the specific agent
+        # Stocker l'action pour l'agent spécifique
         actions_taken[f"Agent {env.current_player_idx + 1}"].append(action_chosen)
         
         # Vérifier si un seul joueur est actif (les autres ont abandonné)
-        active_players = sum(1 for p in env.players if p.is_active)
+        active_players = sum(1 for p in env.players if p.is_active and not p.have_folded)
         if active_players == 1:
             break
             
@@ -101,27 +124,37 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
     
     # Calculer les récompenses finales en fonction des changements de stack et du statut de victoire
     final_stacks = [player.stack for player in env.players]
-    stack_changes = [np.clip((final - initial) / env.starting_stack, -1.0, 1.0) for final, initial in zip(final_stacks, initial_stacks)]
+    stack_changes = [np.clip((final - initial) / env.starting_stack, -1.0, 1.0) 
+                    for final, initial in zip(final_stacks, initial_stacks)]
     
-    # Déterminer les gagnants (joueurs avec le stack le plus élevé)
-    max_stack = max(final_stacks)
-    winning_list = [1 if stack == max_stack else 0 for stack in final_stacks]
-    final_rewards = [r + s  for r, s in zip(cumulative_rewards, stack_changes)]
+    # Déterminer les gagnants (joueurs avec le stack le plus élevé et qui n'ont pas fold)
+    active_players = [p for p in env.players if p.is_active and not p.have_folded]
+    if len(active_players) == 1:
+        # Si un seul joueur actif, il est le gagnant
+        winning_list = [1 if (p.is_active and not p.have_folded) else 0 for p in env.players]
+    else:
+        # Sinon, comparer les stacks des joueurs actifs
+        max_stack = max(p.stack for p in active_players)
+        winning_list = [1 if (p.is_active and not p.have_folded and p.stack == max_stack) else 0 for p in env.players]
 
-    
-    # Ajouter l'état terminal et la récompense finale pour chaque joueur
+    final_rewards = [r + s for r, s in zip(cumulative_rewards, stack_changes)]
+
+    # Calculate final rewards using the stored hand strengths
     for i, agent in enumerate(agent_list):
         env.current_player_idx = i
         terminal_state = env.get_state()
         is_winner = winning_list[i]
-        # Attribuer une récompense finale basée sur la victoire/défaite et le changement de stack
-        final_reward = 1.0 if is_winner else -1.0
-        final_reward += stack_changes[i] * 3  # Inclure l'impact du changement de stack
+        # Now hand_strengths[i] will always exist
+        if is_winner:
+            final_reward = stack_changes[i] ** 1/2 * (1.1 - hand_strengths[i]) * 5
+        else:
+            final_reward = -abs(stack_changes[i]) ** 1/2 * hand_strengths[i] * 5
+
         agent.remember(terminal_state, None, final_reward, None, True)
 
     print("final_rewards: ", final_rewards)
     
-    # Train agents and collect metrics
+    # Entraîner les agents et collecter les métriques
     metrics_list = []
     for agent in agent_list:
         metrics = agent.train_model()
@@ -131,78 +164,96 @@ def run_episode(agent_list, epsilon, rendering, episode, render_every):
     if rendering and (episode % render_every == 0):
         env._draw()
         pygame.display.flip()
-        pygame.time.wait(1000)
+        time.sleep(2)
 
     return final_rewards, winning_list, actions_taken, hand_strengths, metrics_list
 
-# Main Training Loop
 def main_training_loop(agent_list, episodes, rendering, render_every):
-    # Initialize histories
+    """
+    Boucle principale d'entraînement des agents.
+    
+    Args:
+        agent_list (List[PokerAgent]): Liste des agents à entraîner
+        episodes (int): Nombre total d'épisodes d'entraînement
+        rendering (bool): Active ou désactive le rendu graphique
+        render_every (int): Fréquence de mise à jour du rendu graphique
+    """
+    # Initialiser les historiques
     rewards_history = {}
     winning_history = {}
     
-    # Create the visualizer
+    # Créer le visualiseur
     visualizer = TrainingVisualizer(SAVE_INTERVAL)
+
+    # Créer l'environnement de jeu
+    env = PokerGame()
+    for i, agent in enumerate(agent_list):
+        env.players[i].name = agent.name
+        env.players[i].is_human = agent.is_human
     
     try:
         for episode in range(episodes):
-            # Decay epsilon
+            # Décroissance d'epsilon
             epsilon = np.clip(0.10 * EPS_DECAY ** episode, 0.01, 0.10)
             
-            # Initialize game and sync player names with agents
-            env = PokerGame()
-            for i, agent in enumerate(agent_list):
-                env.players[i].name = agent.name
-                env.players[i].is_human = agent.is_human
-            
-            # Run episode and get results including metrics
+            # Exécuter l'épisode et obtenir les résultats incluant les métriques
             reward_list, winning_list, actions_taken, hand_strengths, metrics_list = run_episode(
-                agent_list, epsilon, rendering, episode, render_every
+                env, agent_list, epsilon, rendering, episode, render_every
             )
             
-            # Update histories
+            # Mettre à jour les historiques
             rewards_history = update_rewards_history(rewards_history, reward_list, agent_list)
             winning_history = update_winning_history(winning_history, winning_list, agent_list)
             
-            # Update visualizer with all data including metrics
+            # Mettre à jour le visualiseur avec toutes les données incluant les métriques
             if episode % PLOT_UPDATE_INTERVAL == 0:
                 visualizer.update_plots(episode, reward_list, winning_list, 
                                      actions_taken, hand_strengths, metrics_list)
             
-            # Print episode information
+            # Afficher les informations de l'épisode
             print(f"\nEpisode [{episode + 1}/{episodes}]")
             print(f"Randomness: {epsilon*100:.3f}%")
             for i, reward in enumerate(reward_list):
                 print(f"Agent {i+1} reward: {reward:.2f}")
 
-        # Save the trained models and final plots
+        # Sauvegarder les modèles entraînés et les graphiques finaux
         if episode == episodes - 1:
-            print("\nSaving models...")
+            print("\nSauvegarde des modèles...")
             for agent in agent_list:
                 torch.save(agent.model.state_dict(), 
                          f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
-            print("Models saved successfully!")
-            visualizer.save_counter = visualizer.save_interval  # Force an update
-            visualizer.update_plots(episode, reward_list, winning_list, actions_taken, hand_strengths, metrics_list)
+            print("Modèles sauvegardés avec succès!")
+            visualizer.save_counter = visualizer.save_interval  # Forcer une mise à jour
+            visualizer.update_plots(episode, reward_list, winning_list, 
+                                 actions_taken, hand_strengths, metrics_list)
             plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
-            print("Visualization plots saved successfully!")
+            print("Graphiques de visualisation sauvegardés avec succès!")
 
     except KeyboardInterrupt:
-        print("\nTraining interrupted by user")
+        print("\nEntraînement interrompu par l'utilisateur")
         plot_winning_stats(winning_history, save_path="viz_pdf/poker_wins.jpg")
-        print("Visualization plots saved successfully!")
+        print("Graphiques de visualisation sauvegardés avec succès!")
 
-        print("\nSaving models...")
+        print("\nSauvegarde des modèles...")
         for agent in agent_list:
-            torch.save(agent.model.state_dict(), f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
+            torch.save(agent.model.state_dict(), 
+                     f"saved_models/poker_agent_{agent.name}_epoch_{episode+1}.pth")
     finally:
         if rendering:
             pygame.quit()
-        print("\nTraining completed")
+        print("\nEntraînement terminé")
 
 def update_rewards_history(rewards_history: dict, reward_list: list, agent_list: list) -> dict:
     """
-    Met à jour l'historique des récompenses pour chaque agent
+    Met à jour l'historique des récompenses pour chaque agent.
+    
+    Args:
+        rewards_history (dict): Historique actuel des récompenses
+        reward_list (list): Liste des nouvelles récompenses
+        agent_list (list): Liste des agents
+    
+    Returns:
+        dict: Historique des récompenses mis à jour
     """
     for i, agent in enumerate(agent_list):
         if agent.name not in rewards_history:
@@ -212,7 +263,15 @@ def update_rewards_history(rewards_history: dict, reward_list: list, agent_list:
 
 def update_winning_history(winning_history: dict, winning_list: list, agent_list: list) -> dict:
     """
-    Met à jour l'historique des victoires pour chaque agent
+    Met à jour l'historique des victoires pour chaque agent.
+    
+    Args:
+        winning_history (dict): Historique actuel des victoires
+        winning_list (list): Liste des nouveaux résultats de victoire
+        agent_list (list): Liste des agents
+    
+    Returns:
+        dict: Historique des victoires mis à jour
     """
     for i, agent in enumerate(agent_list):
         if agent.name not in winning_history:

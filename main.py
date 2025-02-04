@@ -14,11 +14,12 @@ for i in range(3):
         action_size=5,  # [check, call, fold, raise, all-in]
         gamma=GAMMA,
         learning_rate=ALPHA,
-        load_model=True,
+        load_model=False,
         load_path=f"saved_models/poker_agent_player_{i+1}.pth"
     )
     agent.name = f"player_{i+1}"
     agent_list.append(agent)
+    agent.is_human = True
 
 # Start the training loop
 main_training_loop(agent_list, episodes=EPISODES, rendering=RENDERING, render_every=1)

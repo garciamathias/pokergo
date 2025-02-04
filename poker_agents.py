@@ -58,7 +58,7 @@ class PokerAgent:
             chosen_index = np.random.choice(valid_indices)
             # Convert numerical index back to PlayerAction
             reverse_action_map = {v: k for k, v in action_map.items()}
-            return reverse_action_map[chosen_index], 0
+            return reverse_action_map[chosen_index]
         else:
             # Convert state to tensor and add batch dimension
             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
@@ -85,7 +85,7 @@ class PokerAgent:
             
             # Convert numerical index back to PlayerAction
             reverse_action_map = {v: k for k, v in action_map.items()}
-            return reverse_action_map[chosen_index], 0
+            return reverse_action_map[chosen_index]
 
     def remember(self, state, action, reward, next_state, done):        
         # Convert PlayerAction enum to numerical action for training
