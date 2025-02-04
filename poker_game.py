@@ -251,9 +251,9 @@ class PokerGame:
             player.stack = 500  # Réinitialiser au stack de départ
         
         # Réinitialiser le bouton et les blindes
-        self.button_position = (self.button_position + 3) % self.num_players
-        self.sb_pos = (self.button_position + 1) % self.num_players
-        self.bb_pos = (self.button_position + 2) % self.num_players
+        self.button_position = (self.button_position + 1) % self.num_players
+        self.sb_pos = (self.sb_pos + 1) % self.num_players
+        self.bb_pos = (self.bb_pos + 1) % self.num_players
         
         # Poster les blindes
         self.players[self.sb_pos].stack -= self.small_blind
@@ -281,9 +281,6 @@ class PokerGame:
         """
         Démarre une nouvelle main de poker en réinitialisant l'état approprié.
         Met à jour les blindes et vérifie les conditions de jeu.
-        
-        Returns:
-            bool: True si la nouvelle main a démarré avec succès, False sinon
         """
         # Mettre à jour les blindes avant de commencer une nouvelle main
         self.update_blinds()
@@ -324,48 +321,40 @@ class PokerGame:
         # Compter les joueurs actifs pour la structure des blindes
         num_active_players = len(active_players)
         
+        # Déplacer le bouton avant de définir les positions des blindes
+        self.button_position = (self.button_position + 1) % self.num_players
+        while not self.players[self.button_position].is_active:
+            self.button_position = (self.button_position + 1) % self.num_players
+        
         if num_active_players == 2:  # Heads-up
-            # En heads-up, on alterne simplement les positions entre les deux joueurs actifs
-            if self.button_position == active_players[0].position:
-                self.button_position = active_players[1].position
-            else:
-                self.button_position = active_players[0].position
-            
             # En heads-up, le bouton est SB et agit en dernier preflop, premier postflop
             self.sb_pos = self.button_position
-            self.bb_pos = active_players[1].position if self.button_position == active_players[0].position else active_players[0].position
-            
-            # Poster les blindes
-            self.players[self.sb_pos].stack -= self.small_blind
-            self.players[self.sb_pos].current_bet = self.small_blind
-            self.players[self.bb_pos].stack -= self.big_blind
-            self.players[self.bb_pos].current_bet = self.big_blind
-            
-            self.pot = self.small_blind + self.big_blind
-            self.deal_cards()
-            
-            # En heads-up, le bouton (SB) agit en premier preflop
-            self.current_player_idx = self.sb_pos
+            self.bb_pos = (self.button_position + 1) % self.num_players
+            while not self.players[self.bb_pos].is_active:
+                self.bb_pos = (self.bb_pos + 1) % self.num_players
         else:
             # Structure normale à 3 joueurs
             self.sb_pos = (self.button_position + 1) % self.num_players
             while not self.players[self.sb_pos].is_active:
                 self.sb_pos = (self.sb_pos + 1) % self.num_players
-            
+                
             self.bb_pos = (self.sb_pos + 1) % self.num_players
             while not self.players[self.bb_pos].is_active:
                 self.bb_pos = (self.bb_pos + 1) % self.num_players
-            
-            self.players[self.sb_pos].stack -= self.small_blind
-            self.players[self.sb_pos].current_bet = self.small_blind
-            self.players[self.bb_pos].stack -= self.big_blind
-            self.players[self.bb_pos].current_bet = self.big_blind
-            
-            self.pot = self.small_blind + self.big_blind
-            self.deal_cards()
-            
-            # UTG agit en premier preflop
-            self.current_player_idx = self._next_active_position(self.bb_pos)
+        
+        # Poster les blindes
+        self.players[self.sb_pos].stack -= self.small_blind
+        self.players[self.sb_pos].current_bet = self.small_blind
+        self.players[self.bb_pos].stack -= self.big_blind
+        self.players[self.bb_pos].current_bet = self.big_blind
+        
+        self.pot = self.small_blind + self.big_blind
+        self.deal_cards()
+        
+        # UTG agit en premier preflop (après BB)
+        self.current_player_idx = (self.bb_pos + 1) % self.num_players
+        while not self.players[self.current_player_idx].is_active:
+            self.current_player_idx = (self.current_player_idx + 1) % self.num_players
 
         self._update_button_states()
         return True
@@ -889,6 +878,15 @@ class PokerGame:
             bet_text = self.font.render(f"Bet: ${player.current_bet:.2f}", True, (255, 255, 0))
             self.screen.blit(bet_text, (player.x - 30, player.y + 80))
     
+        # Draw dealer button (D) - Updated positioning logic
+        if player.position == self.button_position:  # Only draw if this player is the dealer
+            button_x = player.x + 52
+            button_y = player.y + 80
+            pygame.draw.circle(self.screen, (255, 255, 255), (button_x, button_y), 15)
+            dealer_text = self.font.render("D", True, (0, 0, 0))
+            dealer_rect = dealer_text.get_rect(center=(button_x, button_y))
+            self.screen.blit(dealer_text, dealer_rect)
+    
     def _draw(self):
         """
         Dessine l'état complet du jeu sur l'écran.
@@ -917,15 +915,6 @@ class PokerGame:
         current_player = self.players[self.current_player_idx]
         current_player_text = self.font.render(f"Current Player: {current_player.name}", True, (255, 255, 255))
         self.screen.blit(current_player_text, (self.SCREEN_WIDTH - 300, self.SCREEN_HEIGHT - 50))
-        
-        # Draw dealer button (D)
-        button_player = self.players[self.button_position]
-        button_x = button_player.x + 52
-        button_y = button_player.y + 80
-        pygame.draw.circle(self.screen, (255, 255, 255), (button_x, button_y), 15)
-        dealer_text = self.font.render("D", True, (0, 0, 0))
-        dealer_rect = dealer_text.get_rect(center=(button_x, button_y))
-        self.screen.blit(dealer_text, dealer_rect)
         
         # Update button states before drawing
         self._update_button_states()
@@ -1622,4 +1611,3 @@ class PokerGame:
 if __name__ == "__main__":
     game = PokerGame()
     game.manual_run()
-

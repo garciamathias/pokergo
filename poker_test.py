@@ -37,9 +37,7 @@ def load_trained_agents():
     Returns:
         list: Liste des agents chargés avec leurs modèles entraînés
     """
-    agent_list = []
-    STATE_SIZE = 166
-    
+    agent_list = []    
     # Créer et charger les agents
     for i in range(3):
         agent = PokerAgent(
