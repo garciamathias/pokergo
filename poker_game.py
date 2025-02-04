@@ -656,12 +656,15 @@ class PokerGame:
             player.current_bet = all_in_amount
             self.pot += total_to_put_in
             
+            # Update current bet and reset other players' has_acted status
             if all_in_amount > self.current_bet:
                 self.current_bet = all_in_amount
                 self.last_raiser = player
+                # Reset has_acted for other players when the bet increases
                 for p in self.players:
-                    if p != player and p.is_active:
+                    if p != player and p.is_active and not p.has_folded:
                         p.has_acted = False
+            
             
             print(f"{player.name} fait tapis avec ${all_in_amount}")
         
